@@ -14,6 +14,8 @@
 #include "daemon.h"
 #include <bits/getopt_core.h>
 #include <stdio.h>
+#include <sys/syslog.h>
+#include <unistd.h>
 
 /** @brief global verbose option.
  *
@@ -28,6 +30,23 @@ const char* program_name;
 
 int sleep_time = 60;
 
+volatile sig_atomic_t flag = 0;
+
+/** @brief Fn handles SIGUSR1 signal - sets flag to enable scanning.
+*
+*/
+void handle_sigusr1(int sig) {
+	flag = 1;
+	syslog(LOG_INFO, "GOT SIGUSR1");
+}
+
+/** @brief Fn handles SIGUSR1 signal - sets flag to sleep.
+*
+*/
+void handle_sigusr2(int sig) {
+	flag = 2;
+	syslog(LOG_INFO, "GOT SIGUSR2");
+}
 
 /** @brief Fn takes format(s) for files we'll search with regex.
 *
@@ -37,11 +56,15 @@ int sleep_time = 60;
 * @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
 */
 int main(int argc, char** argv){
-	/** function opens syslog. */
-	openlog("FileSearchDaemon", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1); //WARNING - no idea what's going on there XD
+	/** Program registers handlers for SIGUSRs. */
+	signal(SIGUSR1, handle_sigusr1);
+	signal(SIGUSR2, handle_sigusr2);
 
 	verbose=0;
 	program_name = *argv;
+
+	/** function opens syslog. */
+	openlog(program_name, LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL0);
 
 	/* check for no args */
 	if(argc<2)
@@ -104,6 +127,8 @@ int main(int argc, char** argv){
 		++i;
 	}
 
+	daemon(1, 0);
+	overlord(argc, argv, optind);
 
 
 
@@ -111,7 +136,24 @@ int main(int argc, char** argv){
 	return 0;
 }
 
-int overdaemon(size_t sub_daemon_count){
+int overlord(int argc, char**argv, int daemons_count){
+	//WARNING - HIGHLY EXPERIMENTAL!!!!
+	while (1) {
+		if (flag == 1) {
+			syslog(LOG_INFO, "GOT SIGUSR1, starting search\n");
+			//action();
+			flag = 0;
+		} else if (flag == 2) {
+			syslog(LOG_INFO, "GOT SIGUSR2, stopping search\n");
+			//stop action
+			sleep(sleep_time);
+			flag = 0;
+		} else {
+			//action();
+			sleep(sleep_time);  // zastąp t liczbą minut
+		}
+	}
+	//not implemented
 	return 127;
 }
 

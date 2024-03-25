@@ -10,6 +10,7 @@
 #include <bits/getopt_ext.h>
 #include <syslog.h>
 #include <string.h>
+#include <signal.h>
 
 #ifndef __file_seeker_daemon
 #define __file_seeker_daemon
@@ -17,5 +18,6 @@
 #define __file_seeker_max_arg_len 127
 
 int print_usage(FILE* stream, int exit_code);
+int overlord(int argc, char**argv, int daemons_count);
 
 #endif
