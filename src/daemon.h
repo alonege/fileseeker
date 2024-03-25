@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -6,6 +7,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <getopt.h>
+#include <bits/getopt_ext.h>
 #include <syslog.h>
 
 #ifndef __file_seeker_daemon
