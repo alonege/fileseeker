@@ -146,3 +146,4 @@ int main() {
     regex_t regex = compile_regex(pattern);
 
     const char *test_string = "abcdef"; // Przykładowy ciąg znaków
+}
