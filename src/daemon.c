@@ -14,6 +14,8 @@
 #include "daemon.h"
 #include <bits/getopt_core.h>
 #include <stdio.h>
+#include <sys/syslog.h>
+#include <unistd.h>
 
 /** @brief global verbose option.
  *
@@ -26,6 +28,25 @@ int verbose;
  * */
 const char* program_name;
 
+int sleep_time = 60;
+
+volatile sig_atomic_t flag = 0;
+
+/** @brief Fn handles SIGUSR1 signal - sets flag to enable scanning.
+*
+*/
+void handle_sigusr1(int sig) {
+	flag = 1;
+	syslog(LOG_INFO, "GOT SIGUSR1");
+}
+
+/** @brief Fn handles SIGUSR1 signal - sets flag to sleep.
+*
+*/
+void handle_sigusr2(int sig) {
+	flag = 2;
+	syslog(LOG_INFO, "GOT SIGUSR2");
+}
 
 /** @brief Fn takes format(s) for files we'll search with regex.
 *
@@ -35,17 +56,36 @@ const char* program_name;
 * @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
 */
 int main(int argc, char** argv){
-	/** function opens syslog. */
-	openlog("FileSearchDaemon", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1); //WARNING - no idea what's going on there XD
+	/** Program registers handlers for SIGUSRs. */
+	signal(SIGUSR1, handle_sigusr1);
+	signal(SIGUSR2, handle_sigusr2);
 
 	verbose=0;
 	program_name = *argv;
+
+	/** function opens syslog. */
+	openlog(program_name, LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL0);
 
 	/* check for no args */
 	if(argc<2)
 		return print_usage(stdout, 1);
 
-	const char* const short_options = "hv";
+	/** Function call options_handler to handle options and set optind for overlord. */
+	options_handler(argc, argv);
+	
+	/** Function deamonizes program */
+	daemon(1, 0);
+
+	/** WARNING - EXPERIMENTAL - make new threads - NOT IMPLEMENTED YES */
+	//create()...
+
+	overlord(argc, argv, optind);
+
+	return 0;
+}
+
+void options_handler(int argc, char** argv){
+	const char* const short_options = "ht:v";
 
 	/* struct for console options.
 	*
@@ -53,11 +93,13 @@ int main(int argc, char** argv){
 	*/
 	const struct option long_options[] = {
 		{"help", 0, NULL, 'h'},
+		{"time", 1, NULL, 't'},
 		{"verbose", 0, NULL, 'v'},
 		{NULL, 0, NULL, 0}
 	};
 
 	int next_option;
+	int temp_time;
 
 	/** then it scans for -h or -v options. */
 	do{
@@ -69,6 +111,13 @@ int main(int argc, char** argv){
 
 			case 'v': /*-v or --verbose : logging*/
 				verbose=1;
+			break;
+
+			case 't':
+				temp_time = atoi(optarg);
+				sleep_time = (temp_time>0)? temp_time : sleep_time;
+				if(temp_time<=0)
+					printf("Warning: time at -t option is 0 or less. Using default sleep time - %d sec.", sleep_time);
 			break;
 
 			case '?': /*invalid opt*/
@@ -86,19 +135,33 @@ int main(int argc, char** argv){
 
 	/** we handle other arguments (file name patterns). For each pattern, we do [WARNING - DOCUMENT IT LATER] */
 	int i = optind;
+	printf("count of patterns: %d\n", argc - i);
 	while(i<argc){
 		printf("Argument: %s\n", *(argv+i));
+		//TODO regex for each arg? or send it later to childrens?
 		++i;
 	}
 
-
-
-
-
-	return 0;
 }
 
-int overdaemon(size_t sub_daemon_count){
+int overlord(int argc, char**argv, int daemons_count){
+	//WARNING - HIGHLY EXPERIMENTAL!!!!
+	while (1) {
+		if (flag == 1) {
+			syslog(LOG_INFO, "GOT SIGUSR1, starting search\n");
+			//action();
+			flag = 0;
+		} else if (flag == 2) {
+			syslog(LOG_INFO, "GOT SIGUSR2, stopping search\n");
+			//stop action
+			sleep(sleep_time);
+			flag = 0;
+		} else {
+			//action();
+			sleep(sleep_time);  // zastąp t liczbą minut
+		}
+	}
+	//not implemented
 	return 127;
 }
 
@@ -112,10 +175,11 @@ int subdaemon(){
 * @param exit_code value to return from function.
 */
 int print_usage(FILE* stream, int exit_code){
-	fprintf(stream, "Usage: %s [-v] [pattern1 pattern2 ...]\n", program_name);
+	fprintf(stream, "Usage: %s [-v] [-t n] [pattern1 pattern2 ...]\n", program_name);
 	fprintf(stream,
-		"   -h  --help             Shows this help and exits.\n"
-		"   -v  --verbose          Enables verbose logging.\n"
+		"  -h   --help             Shows this help and exits.\n"
+		"  -t n --time n           Sets Daemon sleep time for n seconds.\n"
+		"  -v   --verbose          Enables verbose logging.\n"
 		);
 	return exit_code;
 }
