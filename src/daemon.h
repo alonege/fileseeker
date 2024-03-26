@@ -19,5 +19,6 @@
 
 int print_usage(FILE* stream, int exit_code);
 int overlord(int argc, char**argv, int daemons_count);
+void options_handler(int argc, char** argv);
 
 #endif

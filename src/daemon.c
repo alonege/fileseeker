@@ -70,6 +70,21 @@ int main(int argc, char** argv){
 	if(argc<2)
 		return print_usage(stdout, 1);
 
+	/** Function call options_handler to handle options and set optind for overlord. */
+	options_handler(argc, argv);
+	
+	/** Function deamonizes program */
+	daemon(1, 0);
+
+	/** WARNING - EXPERIMENTAL - make new threads - NOT IMPLEMENTED YES */
+	//create()...
+
+	overlord(argc, argv, optind);
+
+	return 0;
+}
+
+void options_handler(int argc, char** argv){
 	const char* const short_options = "ht:v";
 
 	/* struct for console options.
@@ -127,13 +142,6 @@ int main(int argc, char** argv){
 		++i;
 	}
 
-	daemon(1, 0);
-	overlord(argc, argv, optind);
-
-
-
-
-	return 0;
 }
 
 int overlord(int argc, char**argv, int daemons_count){
