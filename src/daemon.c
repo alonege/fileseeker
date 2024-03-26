@@ -12,9 +12,12 @@
  */
 
 #include "daemon.h"
+#include <assert.h>
 #include <bits/getopt_core.h>
 #include <stdio.h>
 #include <sys/syslog.h>
+#include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 /** @brief global verbose option.
@@ -28,9 +31,22 @@ int verbose;
  * */
 const char* program_name;
 
+/** @brief globa sleep time between waking up
+ *
+ */
 int sleep_time = 60;
 
+/** @brief flag for SIGUSRs
+ *
+ * flag for SIGUSRs - 0 - no flag, 1 - SIGUSR1, 2 - SIGUSR2
+ */
 volatile sig_atomic_t flag = 0;
+
+/** @brief global pid for thread
+ *
+ * Global pid for thread - used in work, handling SIGUSRs etc
+ */
+pid_t pid;
 
 /** @brief Fn handles SIGUSR1 signal - sets flag to enable scanning.
 *
@@ -48,10 +64,9 @@ void handle_sigusr2(int sig) {
 	syslog(LOG_INFO, "GOT SIGUSR2");
 }
 
-/** @brief Fn takes format(s) for files we'll search with regex.
+/** @brief Fn is main driver for other functionalities.
 *
 * Function takes table of char* to arguments wchich are formats for usage in regex.
-* At the beginning, it opens syslog and validates input.
 * @param argc number of args; always at least 1 (for index 0 - program name).
 * @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
 */
@@ -60,30 +75,36 @@ int main(int argc, char** argv){
 	signal(SIGUSR1, handle_sigusr1);
 	signal(SIGUSR2, handle_sigusr2);
 
+	/** Set verbose to 0 and get program_name from first argument. */
 	verbose=0;
 	program_name = *argv;
 
-	/** function opens syslog. */
+	/** Open syslog. */
 	openlog(program_name, LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL0);
 
-	/* check for no args */
+	/* Check for no args */
 	if(argc<2)
 		return print_usage(stdout, 1);
 
 	/** Function call options_handler to handle options and set optind for overlord. */
 	options_handler(argc, argv);
 	
-	/** Function deamonizes program */
+	/** Deamonize program */
 	daemon(1, 0);
 
-	/** WARNING - EXPERIMENTAL - make new threads - NOT IMPLEMENTED YES */
-	//create()...
-
-	overlord(argc, argv, optind);
+	/** WARNING - EXPERIMENTAL - Transfer program control for overlord fun. */
+	overlord(argc, argv);
 
 	return 0;
 }
 
+/** @brief Fn takes format(s) for files we'll search with regex.
+*
+* Function takes table of char* to arguments wchich are formats for usage in regex.
+* At the beginning, it opens syslog and validates input.
+* @param argc number of args; always at least 1 (for index 0 - program name).
+* @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
+*/
 void options_handler(int argc, char** argv){
 	const char* const short_options = "ht:v";
 
@@ -144,28 +165,72 @@ void options_handler(int argc, char** argv){
 
 }
 
-int overlord(int argc, char**argv, int daemons_count){
+/** @brief Fn is driver for creating and overwatching working process.
+*
+* Function takes table of char* to arguments wchich are formats for usage in regex.
+* @param argc number of args; always at least 1 (for index 0 - program name).
+* @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
+*/
+int overlord(int argc, char**argv){
 	//WARNING - HIGHLY EXPERIMENTAL!!!!
-	while (1) {
-		if (flag == 1) {
-			syslog(LOG_INFO, "GOT SIGUSR1, starting search\n");
-			//action();
-			flag = 0;
-		} else if (flag == 2) {
-			syslog(LOG_INFO, "GOT SIGUSR2, stopping search\n");
-			//stop action
-			sleep(sleep_time);
-			flag = 0;
-		} else {
-			//action();
-			sleep(sleep_time);  // zastąp t liczbą minut
+	
+
+	/** From getopt, we use optind to finde first pattern argument. For each pattern create process. */
+	for(int i=optind;i<argc;i++){
+		pid=fork();
+		if(pid == 0)
+		{
+			/** In each new process, launch seeker driver function ...() */
+			while (1) {
+				if (flag == 1) {
+					syslog(LOG_INFO, "GOT SIGUSR1, starting search\n");
+					//action();
+					flag = 0;
+				} else if (flag == 2) {
+					syslog(LOG_INFO, "GOT SIGUSR2, stopping search\n");
+					//stop action
+					sleep(sleep_time);
+					flag = 0;
+				} else {
+					//action();
+					sleep(sleep_time);
+				}
+			}
+
+			//printf("[son] pid %d from [parent] pid %d\n",getpid(),getppid());
+			exit(0);
 		}
+	}
+
+	if(pid){//overlord process
+
+		while (1) {
+			if (flag == 1) {
+				syslog(LOG_INFO, "GOT SIGUSR1, starting search\n");
+				//action();
+				flag = 0;
+			} else if (flag == 2) {
+				syslog(LOG_INFO, "GOT SIGUSR2, stopping search\n");
+				//stop action
+				sleep(sleep_time);
+				flag = 0;
+			} else {
+				//action();
+				sleep(sleep_time);
+			}
+		}
+	} else {//child process
+		assert(!pid);
+	}
+	
+	for(int i=optind;i<argc;i++){
+		wait(NULL);
 	}
 	//not implemented
 	return 127;
 }
 
-int subdaemon(){
+int subdaemon(char* to_find){
 	return 127;
 }
 
