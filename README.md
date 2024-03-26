@@ -1,103 +1,37 @@
-# Dokumentacja
-## Ogólnie - funkcje
-Aby ułatwić dokumentowanie oprogramowania, należy przyjąć styl komentarzy zgodny z doxygen, tj. dla komentarzy blokowych:
-```c
-/** @brief Krótki komentarz
-*
-* Długi komentarz - omówienie funkcji
-* druga linia
-* i trzecia
-*  @param a tutaj krótki komentarz o wymaganiach a, czym ewentualnie jest etc
-*  @param width tutaj czym jest width etc
-*  @param count tutaj czym jest width etc
-*  @return Tutaj opisujemy jaki będzie output
-*/
-int example(void* a, size_t width, size_t count){
-    //kod...
-}
-```
-na przykład:
-```c
-/** @brief Prints character ch with the specified color
- *         at position (row, col).
- *
- *  If any argument is invalid, the function has no effect.
- *
- *  @param row The row in which to display the character.
- *  @param col The column in which to display the character.
- *  @param ch The character to display.
- *  @param color The color to use to display the character.
- *  @return Void.
- */
-void draw_char(int row, int col, int ch, int color);
-```
-## Komentarze plikowe
-W przypadku komentarzy dot. plików:
-```c
-/** @file plik.c
- *  @brief A console driver.
- *
- *  These empty function definitions are provided
- *  so that stdio will build without complaining.
- *  You will need to fill these functions in. This
- *  is the implementation of the console driver.
- *  Important details about its implementation
- *  should go in these comments.
- *
- *  @author Fred Hacker (fhacker)
- */
+# Program do obsługi wyrażeń regularnych
 
-/* -- Includes -- */
+## Opis
 
-/* libc includes. */
-#include <stdio.h>        /* for lprintf_kern() */
+Program `regex_handler.c` jest prostym narzędziem do kompilacji i sprawdzania dopasowania wyrażeń regularnych w ciągach znaków. Ponadto zawiera funkcje do filtrowania plików na podstawie wyrażeń regularnych i innych przydatnych operacji związanych z wyrażeniami regularnymi.
 
-/* multiboot header file */
-#include <multiboot.h>    /* for boot_info */
+## Funkcje
 
-/*
- * state for kernel memory allocation.
- */
-extern lmm_t malloc_lmm;
-```
-więcej na (aka ukradzione między innymi z :3) [link](https://www.cs.cmu.edu/~410/doc/doxygen.html)
-# ANSI C - wskaźniki
-## Definiowanie
-jeśli definiujemy wskaźnik, to w tej samej linii co definicja jeśli coś do niego przypisujemy, to adres, np:
-```c
-int *a = malloc(sizeof(int));
-```
-jest równoważne
-```c
-int *a;
-a = malloc(sizeof(int));
-```
-## Arytmetyka wskaźników
-Przypuśćmy, że mamy tablicę A intów, przy czym została już zalokowana, wypełniona tak że index 0 ma 0, index 1 ma 1 etc. Niech będzie 100 elementów. Wtedy
-```c
-int *ptr = A;
-printf("%d\n", *ptr);
-ptr++; //ptr=1;
-printf("%d\n", *ptr);
-ptr+=2; //ptr=3
-printf("%d\n", *ptr);
-```
-wypisze nam kolejno w nowych liniach 0, 1 i 3. Należy uważać, by nie wyskoczyć poza index 99 (błąd typu buffer overflow, undefined!)
-## Odwoływanie do elementów wskaźników
-Jeśli mamy element w structie, do którego mamy wskaźnik, to do elementu struktury możemy odowływać się z pomocą albo (*a).val, albo a->val.
-```c
-typedef struct el{
-    int val;
-    struct el* next;
-} el, *elPtr;
+1. **Kompilacja wyrażenia regularnego**
+   - Funkcja `compile_regex` kompiluje podane wyrażenie regularne i zwraca strukturę `regex_t`.
 
-int main(){
-    el* ll = malloc(sizeof(el));
-    ll->val = 5;
-    ll->next = malloc(sizeof(el));
-    ll->next->next=0;
-    return 0;
-}
+2. **Sprawdzanie dopasowania**
+   - Funkcja `match_regex` sprawdza, czy podany ciąg znaków pasuje do skompilowanego wyrażenia regularnego.
+
+3. **Filtrowanie plików na podstawie wzorca**
+   - Funkcja `list_files_matching_pattern` przeszukuje określony katalog w poszukiwaniu plików, których nazwy pasują do określonego wzorca wyrażenia regularnego.
+
+4. **Sprawdzanie wszystkich dopasowań**
+   - Funkcja `get_all_matches` sprawdza wszystkie dopasowania ciągu znaków do skompilowanego wyrażenia regularnego.
+
+5. **Walidacja wzorca**
+   - Funkcja `validate_regex_pattern` sprawdza poprawność składniową podanego wzorca wyrażenia regularnego.
+
+## Instrukcje użytkowania
+
+1. Skompiluj program za pomocą odpowiedniego kompilatora dla języka C, np. `gcc regex_handler.c -o regex_handler -std=c11 -Wall`.
+2. Uruchom skompilowany program, wprowadzając odpowiednie argumenty w wierszu poleceń.
+3. Wykorzystaj dostępne funkcje w zależności od potrzeb.
+
+## Przykład użycia
+
+```bash
+./regex_handler -v "abc.*" "test_directory"
 ```
-# Użyte funkcje biblioteki linuxa
-Do rozwinięcia...
+
+W tym przykładzie program przeszuka pliki w katalogu "test_directory", sprawdzając, czy ich nazwy pasują do wyrażenia regularnego "abc.*". Opcja `-v` włącza tryb szczegółowych komunikatów.
+
