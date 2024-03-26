@@ -159,7 +159,10 @@ Program `regex_handler.c` jest prostym narzędziem do kompilacji i sprawdzania d
             regfree(&regex);
             return ret == 0;
         }
+6. **Funkcja Main**
+   - Funkcja `main` prezentuje przykładowe użycie.
 
+     ```c
         int main() {
             const char *pattern = "abc.*"; // Przykładowy wzorzec wyrażenia regularnego
             regex_t regex = compile_regex(pattern);
