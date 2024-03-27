@@ -112,12 +112,6 @@ int signal2_children(){
 * @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
 */
 int main(int argc, char** argv){
-	/** Initalizes array for children_pids with memset to 0. */
-	memset(children_pids, 0, children_count);
-	/** Registers handlers for SIGUSRs. */
-	signal(SIGUSR1, handle_sigusr1);
-	signal(SIGUSR2, handle_sigusr2);
-
 	/** Set verbose to 0 and get program_name from first argument. */
 	verbose=0;
 	program_name = *argv;
@@ -131,6 +125,15 @@ int main(int argc, char** argv){
 
 	/** Function call options_handler to handle options and set optind for overlord. */
 	options_handler(argc, argv);
+
+	children_count=argc-optind;
+
+	/** Initalizes array for children_pids with memset to 0. */
+	memset(children_pids, 0, children_count);
+
+	/** Registers handlers for SIGUSRs. */
+	signal(SIGUSR1, handle_sigusr1);
+	signal(SIGUSR2, handle_sigusr2);
 	
 	/** Deamonize program */
 	daemon(1, 0);
@@ -216,7 +219,7 @@ void options_handler(int argc, char** argv){
 */
 int overlord(int argc, char**argv){
 	//WARNING - HIGHLY EXPERIMENTAL!!!!
-	children_count = argc - optind;
+	//children_count = argc - optind;
 	children_pids = malloc(sizeof(pid_t)*children_count);
 	if(!children_pids)
 		abort();
