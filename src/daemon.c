@@ -69,7 +69,7 @@ int children_count=0;
 */
 void handle_sigusr1(int sig) {
 	flag = 1;
-	syslog(LOG_INFO, "GOT SIGUSR1");
+	//syslog(LOG_INFO, "pid [%d] GOT SIGUSR1",pid);
 }
 
 /** @brief Fn handles SIGUSR1 signal - sets flag to sleep.
@@ -77,7 +77,7 @@ void handle_sigusr1(int sig) {
 */
 void handle_sigusr2(int sig) {
 	flag = 2;
-	syslog(LOG_INFO, "GOT SIGUSR2");
+	//syslog(LOG_INFO, "pid [%d] GOT SIGUSR2",pid);
 }
 
 //WARNING - untested!!!!
@@ -88,6 +88,7 @@ int signal1_children(){
 	int i = 0;
 	while(i<children_count){
 		kill(*(children_pids+i),SIGUSR1);
+		i++;
 	}
 	return 0;
 }
@@ -100,6 +101,7 @@ int signal2_children(){
 	int i = 0;
 	while(i<children_count){
 		kill(*(children_pids+i),SIGUSR2);
+		i++;
 	}
 	return 0;
 }
@@ -129,6 +131,9 @@ int main(int argc, char** argv){
 	children_count=argc-optind;
 
 	/** Initalizes array for children_pids with memset to 0. */
+	children_pids = malloc(sizeof(pid_t)*children_count);
+	if(!children_pids)
+		abort();
 	memset(children_pids, 0, children_count);
 
 	/** Registers handlers for SIGUSRs. */
@@ -220,23 +225,22 @@ void options_handler(int argc, char** argv){
 int overlord(int argc, char**argv){
 	//WARNING - HIGHLY EXPERIMENTAL!!!!
 	//children_count = argc - optind;
-	children_pids = malloc(sizeof(pid_t)*children_count);
-	if(!children_pids)
-		abort();
+
 	pid_t *temp_children_pids_ptr = children_pids;
 	/** From getopt, we use optind to finde first pattern argument. For each pattern create process. */
 	for(int i=optind;i<argc;i++){
 		pid=fork();
 		if(pid == 0){
+			pid=getpid();
 			free(children_pids);
 			/** In each new process, launch seeker driver function ...() */
 			while (1) {
 				if (flag == 1) {
-					syslog(LOG_INFO, "GOT SIGUSR1, starting search\n");
+					syslog(LOG_INFO, "pid [%7d] GOT SIGUSR1, starting search\n", pid);
 					//action();
 					flag = 0;
 				} else if (flag == 2) {
-					syslog(LOG_INFO, "GOT SIGUSR2, stopping search\n");
+					syslog(LOG_INFO, "pid [%7d] GOT SIGUSR2, stopping search\n", pid);
 					//stop action
 					sleep(sleep_time);
 					flag = 0;
@@ -256,12 +260,12 @@ int overlord(int argc, char**argv){
 
 		while (1) {
 			if (flag == 1) {
-				syslog(LOG_INFO, "GOT SIGUSR1, starting search\n");
+				syslog(LOG_INFO, "overlord: GOT SIGUSR1, sending\n");
 				signal1_children();
 				//action();
 				flag = 0;
 			} else if (flag == 2) {
-				syslog(LOG_INFO, "GOT SIGUSR2, stopping search\n");
+				syslog(LOG_INFO, "overlord GOT SIGUSR2, sending\n");
 				signal2_children();
 				//stop action
 				sleep(sleep_time);
