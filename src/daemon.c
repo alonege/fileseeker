@@ -275,6 +275,7 @@ int overlord(int argc, char**argv){
 	for(int i=optind;i<argc;i++){
 		wait(NULL);
 	}
+	free(children_pids);
 	//not implemented
 	return 127;
 }
