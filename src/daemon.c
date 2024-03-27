@@ -14,8 +14,12 @@
 #include "daemon.h"
 #include <assert.h>
 #include <bits/getopt_core.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/syslog.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -48,6 +52,18 @@ volatile sig_atomic_t flag = 0;
  */
 pid_t pid;
 
+/** @brief table with pids to childrens.
+ *
+ *
+ */
+pid_t *children_pids=NULL;
+
+/** @brief count of forked childrens
+ *
+ *
+ */
+int children_count=0;
+
 /** @brief Fn handles SIGUSR1 signal - sets flag to enable scanning.
 *
 */
@@ -64,6 +80,31 @@ void handle_sigusr2(int sig) {
 	syslog(LOG_INFO, "GOT SIGUSR2");
 }
 
+//WARNING - untested!!!!
+/** @brief send signal SIGUSR1 to all forked children.
+ *
+ */
+int signal1_children(){
+	int i = 0;
+	while(i<children_count){
+		kill(*(children_pids+i),SIGUSR1);
+	}
+	return 0;
+}
+
+//WARNING - untested!!!!
+/** @brief send signal SIGUSR2 to all forked children.
+ *
+ */
+int signal2_children(){
+	int i = 0;
+	while(i<children_count){
+		kill(*(children_pids+i),SIGUSR2);
+	}
+	return 0;
+}
+
+
 /** @brief Fn is main driver for other functionalities.
 *
 * Function takes table of char* to arguments wchich are formats for usage in regex.
@@ -71,10 +112,6 @@ void handle_sigusr2(int sig) {
 * @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
 */
 int main(int argc, char** argv){
-	/** Program registers handlers for SIGUSRs. */
-	signal(SIGUSR1, handle_sigusr1);
-	signal(SIGUSR2, handle_sigusr2);
-
 	/** Set verbose to 0 and get program_name from first argument. */
 	verbose=0;
 	program_name = *argv;
@@ -88,6 +125,15 @@ int main(int argc, char** argv){
 
 	/** Function call options_handler to handle options and set optind for overlord. */
 	options_handler(argc, argv);
+
+	children_count=argc-optind;
+
+	/** Initalizes array for children_pids with memset to 0. */
+	memset(children_pids, 0, children_count);
+
+	/** Registers handlers for SIGUSRs. */
+	signal(SIGUSR1, handle_sigusr1);
+	signal(SIGUSR2, handle_sigusr2);
 	
 	/** Deamonize program */
 	daemon(1, 0);
@@ -173,13 +219,16 @@ void options_handler(int argc, char** argv){
 */
 int overlord(int argc, char**argv){
 	//WARNING - HIGHLY EXPERIMENTAL!!!!
-	
-
+	//children_count = argc - optind;
+	children_pids = malloc(sizeof(pid_t)*children_count);
+	if(!children_pids)
+		abort();
+	pid_t *temp_children_pids_ptr = children_pids;
 	/** From getopt, we use optind to finde first pattern argument. For each pattern create process. */
 	for(int i=optind;i<argc;i++){
 		pid=fork();
-		if(pid == 0)
-		{
+		if(pid == 0){
+			free(children_pids);
 			/** In each new process, launch seeker driver function ...() */
 			while (1) {
 				if (flag == 1) {
@@ -200,6 +249,7 @@ int overlord(int argc, char**argv){
 			//printf("[son] pid %d from [parent] pid %d\n",getpid(),getppid());
 			exit(0);
 		}
+		*(temp_children_pids_ptr++)=pid;
 	}
 
 	if(pid){//overlord process
@@ -207,10 +257,12 @@ int overlord(int argc, char**argv){
 		while (1) {
 			if (flag == 1) {
 				syslog(LOG_INFO, "GOT SIGUSR1, starting search\n");
+				signal1_children();
 				//action();
 				flag = 0;
 			} else if (flag == 2) {
 				syslog(LOG_INFO, "GOT SIGUSR2, stopping search\n");
+				signal2_children();
 				//stop action
 				sleep(sleep_time);
 				flag = 0;
@@ -226,6 +278,7 @@ int overlord(int argc, char**argv){
 	for(int i=optind;i<argc;i++){
 		wait(NULL);
 	}
+	free(children_pids);
 	//not implemented
 	return 127;
 }
