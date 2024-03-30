@@ -14,6 +14,7 @@
 #include "daemon.h"
 #include <assert.h>
 #include <bits/getopt_core.h>
+#include <bits/types/sigset_t.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,43 +65,37 @@ pid_t *children_pids=NULL;
  */
 int children_count=0;
 
-/** @brief Fn handles SIGUSR1 signal - sets flag to enable scanning.
+/** @brief Fn handles signals - sets flag for overlord.
 *
 */
-void handle_sigusr1(int sig) {
-	flag = 1;
-	//syslog(LOG_INFO, "pid [%d] GOT SIGUSR1",pid);
-}
+void handle_signals(int sig) {
+	switch (sig) {
+		case SIGUSR1:
+			flag = 1;
 
-/** @brief Fn handles SIGUSR1 signal - sets flag to sleep.
-*
-*/
-void handle_sigusr2(int sig) {
-	flag = 2;
-	//syslog(LOG_INFO, "pid [%d] GOT SIGUSR2",pid);
-}
+		break;
+		case SIGUSR2:
+			flag = 2;
+		break;
 
-//WARNING - untested!!!!
-/** @brief send signal SIGUSR1 to all forked children.
- *
- */
-int signal1_children(){
-	int i = 0;
-	while(i<children_count){
-		kill(*(children_pids+i),SIGUSR1);
-		i++;
+		case SIGTERM:
+			flag = SIGTERM;
+		break;
+
+		default:
+		break;
 	}
-	return 0;
+	syslog(LOG_INFO, "pid [%d] GOT SIGNAL %d",pid, sig);
 }
 
 //WARNING - untested!!!!
-/** @brief send signal SIGUSR2 to all forked children.
+/** @brief send signal sig to all forked children.
  *
  */
-int signal2_children(){
+int signal_children(int sig){
 	int i = 0;
 	while(i<children_count){
-		kill(*(children_pids+i),SIGUSR2);
+		kill(*(children_pids+i),sig);
 		i++;
 	}
 	return 0;
@@ -137,8 +132,9 @@ int main(int argc, char** argv){
 	memset(children_pids, 0, children_count);
 
 	/** Registers handlers for SIGUSRs. */
-	signal(SIGUSR1, handle_sigusr1);
-	signal(SIGUSR2, handle_sigusr2);
+	signal(SIGUSR1, handle_signals);
+	signal(SIGUSR2, handle_signals);
+
 	
 	/** Deamonize program */
 	daemon(1, 0);
@@ -225,7 +221,50 @@ void options_handler(int argc, char** argv){
 int overlord(int argc, char**argv){
 	//WARNING - HIGHLY EXPERIMENTAL!!!!
 	//children_count = argc - optind;
+	
+	create_subdaemons(argc);
 
+	if(pid){//overlord process
+		
+		signal(SIGTERM, handle_signals);
+		sigset_t sigmask;
+		sigemptyset(&sigmask);
+		sigaddset(&sigmask, SIGUSR1);
+		sigaddset(&sigmask, SIGUSR2);
+
+
+		while (flag!=SIGTERM) {
+			if (flag == 1) {
+				syslog(LOG_INFO, "overlord: GOT SIGUSR1, sending\n");
+				signal_children(SIGUSR1);
+				//action();
+				flag = 0;
+			} else if (flag == 2) {
+				syslog(LOG_INFO, "overlord: GOT SIGUSR1, sending\n");
+				signal_children(SIGUSR2);
+				//stop action
+				sleep(sleep_time);
+				flag = 0;
+			} else {
+				//action();
+				sleep(sleep_time);
+			}
+		}
+	} else {//child process
+		assert(!pid);
+	}
+
+	signal_children(SIGTERM);
+	
+	for(int i=optind;i<argc;i++){
+		wait(NULL);
+	}
+	free(children_pids);
+	//not implemented
+	return 127;
+}
+
+int create_subdaemons(int argc){
 	pid_t *temp_children_pids_ptr = children_pids;
 	/** From getopt, we use optind to finde first pattern argument. For each pattern create process. */
 	for(int i=optind;i<argc;i++){
@@ -233,8 +272,13 @@ int overlord(int argc, char**argv){
 		if(pid == 0){
 			pid=getpid();
 			free(children_pids);
+			sigset_t sigmask;
+			sigemptyset(&sigmask);
+			sigaddset(&sigmask, SIGUSR1);
+			sigaddset(&sigmask, SIGUSR2);
 			/** In each new process, launch seeker driver function ...() */
 			while (1) {
+				//WARNING - TOTAL REWRITE NEEDED i guess
 				if (flag == 1) {
 					syslog(LOG_INFO, "pid [%7d] GOT SIGUSR1, starting search\n", pid);
 					//action();
@@ -247,6 +291,7 @@ int overlord(int argc, char**argv){
 				} else {
 					//action();
 					sleep(sleep_time);
+					
 				}
 			}
 
@@ -255,36 +300,7 @@ int overlord(int argc, char**argv){
 		}
 		*(temp_children_pids_ptr++)=pid;
 	}
-
-	if(pid){//overlord process
-
-		while (1) {
-			if (flag == 1) {
-				syslog(LOG_INFO, "overlord: GOT SIGUSR1, sending\n");
-				signal1_children();
-				//action();
-				flag = 0;
-			} else if (flag == 2) {
-				syslog(LOG_INFO, "overlord GOT SIGUSR2, sending\n");
-				signal2_children();
-				//stop action
-				sleep(sleep_time);
-				flag = 0;
-			} else {
-				//action();
-				sleep(sleep_time);
-			}
-		}
-	} else {//child process
-		assert(!pid);
-	}
-	
-	for(int i=optind;i<argc;i++){
-		wait(NULL);
-	}
-	free(children_pids);
-	//not implemented
-	return 127;
+	return 0;
 }
 
 int subdaemon(char* to_find){

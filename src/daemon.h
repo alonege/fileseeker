@@ -21,5 +21,6 @@
 int print_usage(FILE* stream, int exit_code);
 int overlord(int argc, char**argv);
 void options_handler(int argc, char** argv);
+int create_subdaemons(int argc);
 
 #endif
