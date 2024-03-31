@@ -94,12 +94,34 @@ void handle_signals(int sig) {
 	syslog(LOG_INFO, "pid [%d] GOT SIGNAL %d\n",pid, sig);
 }
 
-/** @brief function for locking SIGUSRs inputs durig critical sections.
+/** @brief function masks signals input BEFORE critical sections.
  *
- *
+ * @param sig signal to mask besides SIGTERM.
  */
-void handle_signals_locked(int sig){
-	syslog(LOG_INFO, "pid [%d] IGNORED SIGNAL %d\n",pid, sig);
+void critical_lock(int sig){
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, sig);
+	sigaddset(&sigmask, SIGTERM);
+	sigprocmask(SIG_BLOCK, &sigmask, NULL);
+	syslog(LOG_DEBUG, "overlord: critical section masked %d.\n", sig);
+}
+
+
+/** @brief function UNmasks signals input AFTER critical sections.
+ *
+ * @param sig signal to UNmask besides SIGTERM.
+ */
+void critical_unlock(int sig){
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, sig);
+	sigaddset(&sigmask, SIGTERM);
+	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
+	syslog(LOG_DEBUG, "overlord: critical section UNmasked %d.\n", sig);
+	//signal(SIGUSR1, handle_signals);
+	//signal(SIGUSR2, handle_signals);
+	//syslog(LOG_DEBUG, "overlord: critical section lock DISABLED (OFF).\n");
 }
 
 //WARNING - untested!!!!
@@ -135,7 +157,7 @@ int signal_children_wait(int sig){
 	}
 	for (i = 0; i < children_count; i++){
 		sigwait(&sigmask, &status);
-		syslog(LOG_INFO, "WAITING FOR CHILD SIGNAL\n");
+		syslog(LOG_INFO, "overlord: WAITING FOR CHILD SIGNAL\n");
 	}
 
 	return 0;
@@ -311,37 +333,31 @@ int overlord(int argc, char**argv){
 		sigemptyset(&sigmask);
 		sigaddset(&sigmask, SIGUSR1);
 		sigaddset(&sigmask, SIGUSR2);
-
-		sigset_t sigkid;
-		sigemptyset(&sigkid);
-		sigaddset(&sigkid, SIGCHLD);
+		sigaddset(&sigmask, SIGCHLD);
+		int status;
 
 		while (flag!=SIGTERM) {
 			switch (flag) {
 				case 1: /** case flag==1: send SIGUSR1 to child to start search */
-					signal(SIGUSR1, handle_signals_locked);
-					signal(SIGUSR2, handle_signals_locked);
+					critical_lock(2);
 					syslog(LOG_INFO, "overlord: GOT SIGUSR1, sending\n");
 					signal_children_wait(SIGUSR1);
-					syslog(LOG_INFO, "overlord: SIGCHLD ACK from SIGUSR1\n");
+					syslog(LOG_INFO, "overlord: got ACK SIGUSR1\n");
 					flag = 3;
-					signal(SIGUSR1, handle_signals);
-					signal(SIGUSR2, handle_signals);
+					critical_unlock(2);
 				break;
 
 				case 2: /** case flag==2: send SIGUSR2 to child to stop search */
-					signal(SIGUSR1, handle_signals_locked);
-					signal(SIGUSR2, handle_signals_locked);
+					critical_lock(1);
 					syslog(LOG_INFO, "overlord: GOT SIGUSR2, sending\n");
 					signal_children_wait(SIGUSR2);
-					syslog(LOG_INFO, "overlord: SIGCHLD ACK from SIGUSR2\n");
+					syslog(LOG_INFO, "overlord: got ACK SIGUSR2\n");
 					flag = 0;
-					signal(SIGUSR1, handle_signals);
-					signal(SIGUSR2, handle_signals);
+					critical_unlock(1);
 				break;
 
 				case 3:
-					
+					sigwait(&sigmask, &status);
 				break;
 
 				case 0:
@@ -384,13 +400,13 @@ int create_subdaemons(int argc){
 			/** In each new process, launch seeker driver function ...() */
 			while (1) {
 				//WARNING - TOTAL REWRITE NEEDED i guess
-				if (flag == 2) {
-					syslog(LOG_INFO, "pid [%7d] GOT SIGUSR1, starting search\n", pid);
+				if (flag == 1) {
+					syslog(LOG_INFO, "child [%d] GOT SIGUSR1, starting search\n", pid);
 					//action();
 					send_ack_parent(SIGUSR1);
 					flag = 3;
-				} else if (flag == 1) {
-					syslog(LOG_INFO, "pid [%7d] GOT SIGUSR2, stopping search\n", pid);
+				} else if (flag == 2) {
+					syslog(LOG_INFO, "child [%7d] GOT SIGUSR2, stopping search\n", pid);
 					//stop action
 					send_ack_parent(SIGUSR2);
 					sleep(sleep_time);
