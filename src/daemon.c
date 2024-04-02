@@ -14,8 +14,13 @@
 #include "daemon.h"
 #include <assert.h>
 #include <bits/getopt_core.h>
+#include <bits/types/sigset_t.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/syslog.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -48,20 +53,155 @@ volatile sig_atomic_t flag = 0;
  */
 pid_t pid;
 
-/** @brief Fn handles SIGUSR1 signal - sets flag to enable scanning.
+/** @brief global parent pid for thread
+ *
+ * Global pid for thread - used in work, handling SIGUSRs etc
+ */
+pid_t ppid=0;
+
+/** @brief table with pids to childrens.
+ *
+ *
+ */
+pid_t *children_pids=NULL;
+
+/** @brief count of forked childrens
+ *
+ *
+ */
+int children_count=0;
+
+/** @brief Fn handles signals - sets flag for overlord.
 *
 */
-void handle_sigusr1(int sig) {
-	flag = 1;
-	syslog(LOG_INFO, "GOT SIGUSR1");
+void handle_signals(int sig) {
+	switch (sig) {
+		case SIGUSR1:
+			flag = 1;
+
+		break;
+		case SIGUSR2:
+			flag = 2;
+		break;
+
+		case SIGTERM:
+			flag = SIGTERM;
+		break;
+
+		default:
+		break;
+	}
+	syslog(LOG_INFO, "pid [%d] GOT SIGNAL %d\n",pid, sig);
 }
 
-/** @brief Fn handles SIGUSR1 signal - sets flag to sleep.
-*
-*/
-void handle_sigusr2(int sig) {
-	flag = 2;
-	syslog(LOG_INFO, "GOT SIGUSR2");
+/** @brief function masks signals input BEFORE critical sections.
+ *
+ * @param sig signal to mask besides SIGTERM.
+ */
+void critical_lock(int sig){
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, sig);
+	sigaddset(&sigmask, SIGTERM);
+	sigprocmask(SIG_BLOCK, &sigmask, NULL);
+	syslog(LOG_DEBUG, "overlord: critical section masked %d.\n", sig);
+}
+
+
+/** @brief function UNmasks signals input AFTER critical sections.
+ *
+ * @param sig signal to UNmask besides SIGTERM.
+ */
+void critical_unlock(int sig){
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, sig);
+	sigaddset(&sigmask, SIGTERM);
+	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
+	syslog(LOG_DEBUG, "overlord: critical section UNmasked %d.\n", sig);
+	//signal(SIGUSR1, handle_signals);
+	//signal(SIGUSR2, handle_signals);
+	//syslog(LOG_DEBUG, "overlord: critical section lock DISABLED (OFF).\n");
+}
+
+//WARNING - untested!!!!
+/** @brief send signal sig to all forked children.
+ *
+ */
+int signal_children(int sig){
+	int i = 0;
+	while(i<children_count){
+		kill(*(children_pids+i),sig);
+		i++;
+	}
+	return 0;
+}
+
+//WARNING - untested!!!!
+/** @brief send signal sig to all forked children and awaits for SIGCHLD response.
+ *
+ */
+int signal_children_wait(int sig){
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGCHLD);
+	sigaddset(&sigmask, SIGUSR1);
+	sigaddset(&sigmask, SIGUSR2);
+	int status=0;
+	int i = 0;
+	/** For each children pid */
+	while(i<children_count){
+		/** send sig signal */
+		kill(*(children_pids+i),sig);
+		i++;
+	}
+	for (i = 0; i < children_count; i++){
+		sigwait(&sigmask, &status);
+		syslog(LOG_INFO, "overlord: WAITING FOR CHILD SIGNAL\n");
+	}
+
+	return 0;
+}
+
+//WARNING - bugged
+/** @brief check if all children are alive. 0 - alive, 1 - at least one process is dead.
+ *
+ *
+ */
+int check_children_alive(){
+	int status;
+	pid_t *tempchildrenpids = children_pids;
+	int count_of_alive = 0;
+	int i = 0;
+	while (i<children_count){
+		pid_t result = waitpid(*(tempchildrenpids+i), &status, WNOHANG);
+		if (result == 0) {
+			// Child still alive
+			count_of_alive++;
+		} else if (result == -1) {
+			// Error
+		} else {
+			// Child exited
+		}
+	}
+	if(children_count==count_of_alive)
+		return 0;
+	else
+		return 1;
+}
+
+/** @brief send SIGCHLD signal (aka ACK) to parent process
+ *
+ *
+ */
+int send_ack_parent(int sig){
+	if(ppid>0){
+		kill(ppid, sig);
+		syslog(LOG_INFO, "child: ACKed with SIGCHLD\n");
+		return 0;
+	} else {
+		return 1;
+	}
 }
 
 /** @brief Fn is main driver for other functionalities.
@@ -71,10 +211,6 @@ void handle_sigusr2(int sig) {
 * @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
 */
 int main(int argc, char** argv){
-	/** Program registers handlers for SIGUSRs. */
-	signal(SIGUSR1, handle_sigusr1);
-	signal(SIGUSR2, handle_sigusr2);
-
 	/** Set verbose to 0 and get program_name from first argument. */
 	verbose=0;
 	program_name = *argv;
@@ -88,7 +224,20 @@ int main(int argc, char** argv){
 
 	/** Function call options_handler to handle options and set optind for overlord. */
 	options_handler(argc, argv);
-	
+
+	children_count=argc-optind;
+
+	/** Initalizes array for children_pids with memset to 0. */
+	children_pids = malloc(sizeof(pid_t)*children_count);
+	if(!children_pids)
+		abort();
+	memset(children_pids, 0, children_count);
+
+	/** Registers handlers for SIGUSRs. */
+	signal(SIGUSR1, handle_signals);
+	signal(SIGUSR2, handle_signals);
+
+
 	/** Deamonize program */
 	daemon(1, 0);
 
@@ -173,61 +322,108 @@ void options_handler(int argc, char** argv){
 */
 int overlord(int argc, char**argv){
 	//WARNING - HIGHLY EXPERIMENTAL!!!!
-	
+	//children_count = argc - optind;
 
+	create_subdaemons(argc);
+
+	if(pid){//overlord process
+
+		signal(SIGTERM, handle_signals);
+		sigset_t sigmask;
+		sigemptyset(&sigmask);
+		sigaddset(&sigmask, SIGUSR1);
+		sigaddset(&sigmask, SIGUSR2);
+		sigaddset(&sigmask, SIGCHLD);
+		int status;
+
+		while (flag!=SIGTERM) {
+			switch (flag) {
+				case 1: /** case flag==1: send SIGUSR1 to child to start search */
+					critical_lock(2);
+					syslog(LOG_INFO, "overlord: GOT SIGUSR1, sending\n");
+					signal_children_wait(SIGUSR1);
+					syslog(LOG_INFO, "overlord: got ACK SIGUSR1\n");
+					flag = 3;
+					critical_unlock(2);
+				break;
+
+				case 2: /** case flag==2: send SIGUSR2 to child to stop search */
+					critical_lock(1);
+					syslog(LOG_INFO, "overlord: GOT SIGUSR2, sending\n");
+					signal_children_wait(SIGUSR2);
+					syslog(LOG_INFO, "overlord: got ACK SIGUSR2\n");
+					flag = 0;
+					critical_unlock(1);
+				break;
+
+				case 3:
+					sigwait(&sigmask, &status);
+				break;
+
+				case 0:
+					sleep(sleep_time);
+				break;
+
+				case SIGTERM:
+					//signal_children(SIGTERM);
+				break;
+
+			}
+		}
+	} else {//child process
+		assert(!pid);
+	}
+
+	signal_children(SIGTERM);
+
+	for(int i=optind;i<argc;i++){
+		wait(NULL);
+	}
+	free(children_pids);
+	//not implemented
+	return 0;
+}
+
+int create_subdaemons(int argc){
+	pid_t *temp_children_pids_ptr = children_pids;
 	/** From getopt, we use optind to finde first pattern argument. For each pattern create process. */
 	for(int i=optind;i<argc;i++){
 		pid=fork();
-		if(pid == 0)
-		{
+		if(pid == 0){
+			pid=getpid();
+			ppid=getppid();
+			free(children_pids);
+			sigset_t sigmask;
+			sigemptyset(&sigmask);
+			sigaddset(&sigmask, SIGUSR1);
+			sigaddset(&sigmask, SIGUSR2);
 			/** In each new process, launch seeker driver function ...() */
 			while (1) {
+				//WARNING - TOTAL REWRITE NEEDED i guess
 				if (flag == 1) {
-					syslog(LOG_INFO, "GOT SIGUSR1, starting search\n");
+					syslog(LOG_INFO, "child [%d] GOT SIGUSR1, starting search\n", pid);
 					//action();
-					flag = 0;
+					send_ack_parent(SIGUSR1);
+					flag = 3;
 				} else if (flag == 2) {
-					syslog(LOG_INFO, "GOT SIGUSR2, stopping search\n");
+					syslog(LOG_INFO, "child [%7d] GOT SIGUSR2, stopping search\n", pid);
 					//stop action
+					send_ack_parent(SIGUSR2);
 					sleep(sleep_time);
 					flag = 0;
 				} else {
 					//action();
 					sleep(sleep_time);
+
 				}
 			}
 
 			//printf("[son] pid %d from [parent] pid %d\n",getpid(),getppid());
 			exit(0);
 		}
+		*(temp_children_pids_ptr++)=pid;
 	}
-
-	if(pid){//overlord process
-
-		while (1) {
-			if (flag == 1) {
-				syslog(LOG_INFO, "GOT SIGUSR1, starting search\n");
-				//action();
-				flag = 0;
-			} else if (flag == 2) {
-				syslog(LOG_INFO, "GOT SIGUSR2, stopping search\n");
-				//stop action
-				sleep(sleep_time);
-				flag = 0;
-			} else {
-				//action();
-				sleep(sleep_time);
-			}
-		}
-	} else {//child process
-		assert(!pid);
-	}
-	
-	for(int i=optind;i<argc;i++){
-		wait(NULL);
-	}
-	//not implemented
-	return 127;
+	return 0;
 }
 
 int subdaemon(char* to_find){
