@@ -339,21 +339,21 @@ int overlord(int argc, char**argv){
 		while (flag!=SIGTERM) {
 			switch (flag) {
 				case 1: /** case flag==1: send SIGUSR1 to child to start search */
-					critical_lock(2);
+					critical_lock(SIGUSR2);
 					syslog(LOG_INFO, "overlord: GOT SIGUSR1, sending\n");
 					signal_children_wait(SIGUSR1);
 					syslog(LOG_INFO, "overlord: got ACK SIGUSR1\n");
 					flag = 3;
-					critical_unlock(2);
+					critical_unlock(SIGUSR2);
 				break;
 
 				case 2: /** case flag==2: send SIGUSR2 to child to stop search */
-					critical_lock(1);
+					critical_lock(SIGUSR1);
 					syslog(LOG_INFO, "overlord: GOT SIGUSR2, sending\n");
 					signal_children_wait(SIGUSR2);
 					syslog(LOG_INFO, "overlord: got ACK SIGUSR2\n");
 					flag = 0;
-					critical_unlock(1);
+					critical_unlock(SIGUSR1);
 				break;
 
 				case 3:
