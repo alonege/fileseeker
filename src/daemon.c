@@ -77,15 +77,14 @@ int children_count=0;
 void handle_signals(int sig) {
 	switch (sig) {
 		case SIGUSR1:
-			flag = 1;
-
+			flag = flag_start;
 		break;
 		case SIGUSR2:
-			flag = 2;
+			flag = flag_stop;
 		break;
 
 		case SIGTERM:
-			flag = SIGTERM;
+			flag = flag_termination;
 		break;
 
 		default:
@@ -102,6 +101,8 @@ void critical_lock(int sig){
 	sigset_t sigmask;
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, sig);
+	//sigaddset(&sigmask, SIGUSR1);
+	//sigaddset(&sigmask, SIGUSR2);
 	sigaddset(&sigmask, SIGTERM);
 	sigprocmask(SIG_BLOCK, &sigmask, NULL);
 	syslog(LOG_DEBUG, "overlord: critical section masked %d.\n", sig);
@@ -116,6 +117,8 @@ void critical_unlock(int sig){
 	sigset_t sigmask;
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, sig);
+	//sigaddset(&sigmask, SIGUSR1);
+	//sigaddset(&sigmask, SIGUSR2);
 	sigaddset(&sigmask, SIGTERM);
 	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
 	syslog(LOG_DEBUG, "overlord: critical section UNmasked %d.\n", sig);
@@ -327,44 +330,50 @@ int overlord(int argc, char**argv){
 	create_subdaemons(argc);
 
 	if(pid){//overlord process
+		pid = getpid();
 		
 		signal(SIGTERM, handle_signals);
 		sigset_t sigmask;
 		sigemptyset(&sigmask);
-		sigaddset(&sigmask, SIGUSR1);
-		sigaddset(&sigmask, SIGUSR2);
-		sigaddset(&sigmask, SIGCHLD);
+		sigfillset(&sigmask);
+		//sigaddset(&sigmask, SIGUSR1);
+		//sigaddset(&sigmask, SIGUSR2);
+		//sigaddset(&sigmask, SIGCHLD);
+		//sigaddset(&sigmask, SIGCHLD);
 		int status;
 
-		while (flag!=SIGTERM) {
+		while (flag!=flag_termination) {
 			switch (flag) {
-				case 1: /** case flag==1: send SIGUSR1 to child to start search */
+				case flag_start: /** case flag==1: send SIGUSR1 to child to start search */
 					critical_lock(SIGUSR2);
 					syslog(LOG_INFO, "overlord: GOT SIGUSR1, sending\n");
-					signal_children_wait(SIGUSR1);
+					signal_children(SIGUSR1);
 					syslog(LOG_INFO, "overlord: got ACK SIGUSR1\n");
-					flag = 3;
+					flag = flag_scan;
 					critical_unlock(SIGUSR2);
 				break;
 
-				case 2: /** case flag==2: send SIGUSR2 to child to stop search */
+				case flag_stop: /** case flag==2: send SIGUSR2 to child to stop search */
 					critical_lock(SIGUSR1);
 					syslog(LOG_INFO, "overlord: GOT SIGUSR2, sending\n");
-					signal_children_wait(SIGUSR2);
+					signal_children(SIGUSR2);
 					syslog(LOG_INFO, "overlord: got ACK SIGUSR2\n");
-					flag = 0;
+					flag = flag_sleep;
 					critical_unlock(SIGUSR1);
 				break;
 
-				case 3:
-					sigwait(&sigmask, &status);
-				break;
-
-				case 0:
+				case flag_scan:
+					syslog(LOG_DEBUG, "overlord: flag_scan case\n");
+					//sigwait(&sigmask, &status);
 					sleep(sleep_time);
 				break;
 
-				case SIGTERM:
+				case flag_sleep:
+					syslog(LOG_DEBUG, "overlord: flag_sleep case\n");
+					sleep(sleep_time);
+				break;
+
+				case flag_termination:
 					//signal_children(SIGTERM);
 				break;
 
@@ -390,29 +399,31 @@ int create_subdaemons(int argc){
 	for(int i=optind;i<argc;i++){
 		pid=fork();
 		if(pid == 0){
+
+			int status=0;
 			pid=getpid();
 			ppid=getppid();
 			free(children_pids);
 			sigset_t sigmask;
 			sigemptyset(&sigmask);
-			sigaddset(&sigmask, SIGUSR1);
-			sigaddset(&sigmask, SIGUSR2);
+			sigfillset(&sigmask);
+			//sigaddset(&sigmask, SIGUSR1);
+			//sigaddset(&sigmask, SIGUSR2);
 			/** In each new process, launch seeker driver function ...() */
 			while (1) {
 				//WARNING - TOTAL REWRITE NEEDED i guess
-				if (flag == 1) {
+				if (flag == flag_start) {
 					syslog(LOG_INFO, "child [%d] GOT SIGUSR1, starting search\n", pid);
 					//action();
-					send_ack_parent(SIGUSR1);
-					flag = 3;
-				} else if (flag == 2) {
+					//send_ack_parent(SIGCHLD);
+					flag = flag_scan;
+				} else if (flag == flag_stop) {
 					syslog(LOG_INFO, "child [%7d] GOT SIGUSR2, stopping search\n", pid);
 					//stop action
-					send_ack_parent(SIGUSR2);
-					sleep(sleep_time);
-					flag = 0;
+					flag = flag_sleep;
 				} else {
 					//action();
+					//sigwait(&sigmask, &status);
 					sleep(sleep_time);
 					
 				}
