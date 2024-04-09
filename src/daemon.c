@@ -250,72 +250,6 @@ int main(int argc, char** argv){
 	return 0;
 }
 
-/** @brief Fn takes format(s) for files we'll search with regex.
-*
-* Function takes table of char* to arguments wchich are formats for usage in regex.
-* At the beginning, it opens syslog and validates input.
-* @param argc number of args; always at least 1 (for index 0 - program name).
-* @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
-*/
-void options_handler(int argc, char** argv){
-	const char* const short_options = "ht:v";
-
-	/* struct for console options.
-	*
-	* struct for unix library <getopt.h> implementing command line -v/--verbose option.
-	*/
-	const struct option long_options[] = {
-		{"help", 0, NULL, 'h'},
-		{"time", 1, NULL, 't'},
-		{"verbose", 0, NULL, 'v'},
-		{NULL, 0, NULL, 0}
-	};
-
-	int next_option;
-	int temp_time;
-
-	/** then it scans for -h or -v options. */
-	do{
-		next_option = getopt_long(argc, argv, short_options, long_options, NULL);
-		switch (next_option) {
-			case 'h': /*-h or --help : help*/
-				print_usage(stdout, 0);
-			break;
-
-			case 'v': /*-v or --verbose : logging*/
-				verbose=1;
-			break;
-
-			case 't':
-				temp_time = atoi(optarg);
-				sleep_time = (temp_time>0)? temp_time : sleep_time;
-				if(temp_time<=0)
-					printf("Warning: time at -t option is 0 or less. Using default sleep time - %d sec.", sleep_time);
-			break;
-
-			case '?': /*invalid opt*/
-				print_usage(stdout, 1);
-			break;
-
-			case -1: /*all opts done*/
-			break;
-
-			default: /*something wrong*/
-			abort();
-		}
-	/** option scan is continued untill we're out of options. */
-	} while(next_option!=-1);
-
-	/** we handle other arguments (file name patterns). For each pattern, we do [WARNING - DOCUMENT IT LATER] */
-	int i = optind;
-	printf("count of patterns: %d\n", argc - i);
-	while(i<argc){
-		printf("Argument: %s\n", *(argv+i));
-		//TODO regex for each arg? or send it later to childrens?
-		++i;
-	}
-
-}
 
 /** @brief Fn is driver for creating and overwatching working process.
 *
@@ -340,9 +274,9 @@ int overlord(int argc, char**argv){
 		//sigaddset(&sigmask, SIGUSR2);
 		//sigaddset(&sigmask, SIGCHLD);
 		//sigaddset(&sigmask, SIGCHLD);
-		int status;
 
 		while (flag!=flag_termination) {
+			//add life validation
 			switch (flag) {
 				case flag_start: /** case flag==1: send SIGUSR1 to child to start search */
 					critical_lock(SIGUSR2);
@@ -365,7 +299,8 @@ int overlord(int argc, char**argv){
 				case flag_scan:
 					syslog(LOG_DEBUG, "overlord: flag_scan case\n");
 					//sigwait(&sigmask, &status);
-					sleep(sleep_time);
+					//sleep(sleep_time);
+					pause();
 				break;
 
 				case flag_sleep:
@@ -396,49 +331,53 @@ int overlord(int argc, char**argv){
 int create_subdaemons(int argc){
 	pid_t *temp_children_pids_ptr = children_pids;
 	/** From getopt, we use optind to finde first pattern argument. For each pattern create process. */
-	for(int i=optind;i<argc;i++){
+	for(int i=0;i<children_count;i++){
 		pid=fork();
 		if(pid == 0){
-
-			int status=0;
-			pid=getpid();
-			ppid=getppid();
-			free(children_pids);
-			sigset_t sigmask;
-			sigemptyset(&sigmask);
-			sigfillset(&sigmask);
-			//sigaddset(&sigmask, SIGUSR1);
-			//sigaddset(&sigmask, SIGUSR2);
-			/** In each new process, launch seeker driver function ...() */
-			while (1) {
-				//WARNING - TOTAL REWRITE NEEDED i guess
-				if (flag == flag_start) {
-					syslog(LOG_INFO, "child [%d] GOT SIGUSR1, starting search\n", pid);
-					//action();
-					//send_ack_parent(SIGCHLD);
-					flag = flag_scan;
-				} else if (flag == flag_stop) {
-					syslog(LOG_INFO, "child [%7d] GOT SIGUSR2, stopping search\n", pid);
-					//stop action
-					flag = flag_sleep;
-				} else {
-					//action();
-					//sigwait(&sigmask, &status);
-					sleep(sleep_time);
-					
-				}
-			}
-
-			//printf("[son] pid %d from [parent] pid %d\n",getpid(),getppid());
-			exit(0);
+			subdaemon(i);
 		}
 		*(temp_children_pids_ptr++)=pid;
 	}
 	return 0;
 }
 
-int subdaemon(char* to_find){
-	return 127;
+int subdaemon(int index){
+	pid=getpid();
+	ppid=getppid();
+	free(children_pids);
+	/** In each new process, launch seeker driver function ...() */
+	while (1) {
+		switch (flag) {
+			case flag_start:
+				syslog(LOG_INFO, "child [%d] GOT SIGUSR1, starting search\n", pid);
+				//action();
+				//send_ack_parent(SIGCHLD);
+				flag = flag_scan;
+			break;
+
+			case flag_stop:
+				syslog(LOG_INFO, "child [%7d] GOT SIGUSR2, stopping search\n", pid);
+				//stop action
+			break;
+
+			case flag_scan:
+				//WARNING - development and debug pause
+				pause();
+			break;
+
+			case flag_sleep:
+				pause();
+			break;
+
+			default:
+				pause();
+
+			break;
+		}
+	}
+	//printf("[son] pid %d from [parent] pid %d\n",getpid(),getppid());
+	exit(0);
+
 }
 
 /** @brief Prints help page.

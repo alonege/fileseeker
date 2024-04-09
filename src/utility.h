@@ -1,0 +1,4 @@
+#ifndef FILE_SEEKER_UTILITY
+#define FILE_SEEKER_UTILITY
+
+#endif
