@@ -1,18 +1,52 @@
 #include "fileseeker.h"
+#include <stdlib.h>
+
+/** @brief function masks signals input BEFORE critical sections.
+ *
+ * @param sig signal to mask besides SIGTERM.
+ */
+void critical_lock_child(){
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGUSR1);
+	sigaddset(&sigmask, SIGUSR2);
+	sigaddset(&sigmask, SIGTERM);
+	sigprocmask(SIG_BLOCK, &sigmask, NULL);
+}
+
+
+/** @brief function UNmasks signals input AFTER critical sections.
+ *
+ * @param sig signal to UNmask besides SIGTERM.
+ */
+void critical_unlock_child(){
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGUSR1);
+	sigaddset(&sigmask, SIGUSR2);
+	sigaddset(&sigmask, SIGTERM);
+	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
+}
+
+
 /** @brief Fn handles signals - sets flag for children.
 *
 */
 void handle_signals_child(int sig, siginfo_t* si, void* data) {
-	switch (sig) {
-		case SIGUSR1:
-			flag = flag_start;
-		break;
-		case SIGUSR2:
-			flag = flag_stop;
-		break;
+	if(si->si_pid==ppid){
+		switch (sig) {
+			case SIGUSR1:
+				critical_lock_child();
+				flag = flag_start;
+			break;
+			case SIGUSR2:
+				critical_lock_child();
+				flag = flag_stop;
+			break;
 
-		default:
-		break;
+			default:
+			break;
+		}
 	}
 }
 
@@ -38,22 +72,28 @@ int subdaemon(int index){
 	while (1) {
 		switch (flag) {
 			case flag_start:
-				syslog(LOG_INFO, "GOT SIGUSR1, starting search\n");
-				//action();
-				//send_ack_parent(SIGCHLD);
-				flag = flag_scan;
+				flag=flag_scan;
+				syslog(LOG_DEBUG, "GOT SIGUSR1, starting search\n");
+				critical_unlock_child();
+				//work to do - fn call with while flag==flag_scan loop/recursive checking
+				if(flag==flag_scan){
+					//scan ended by itself
+					syslog(LOG_DEBUG, "succesfully ended search\n");
+					flag=flag_stop;//let's inform overlord
+				} else if (flag==flag_stop) {
+					syslog(LOG_DEBUG, "GOT SIGUSR2, stopping search\n");
+					flag=flag_sleep;
+				} else {
+					abort();
+				}
 			break;
 
 			case flag_stop:
-				syslog(LOG_INFO, "GOT SIGUSR2, stopping search\n");
 				//stop action
 				flag = flag_sleep;
+				critical_unlock_child();
 			break;
 
-			case flag_scan:
-				//WARNING - development and debug pause
-				pause();
-			break;
 
 			case flag_sleep:
 				pause();

@@ -50,7 +50,7 @@ pid_t pid;
  *
  * Global pid for thread - used in work, handling SIGUSRs etc
  */
-pid_t ppid=0;
+volatile pid_t ppid=0;
 
 /** @brief table with pids to childrens.
  *

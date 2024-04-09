@@ -21,8 +21,8 @@
 /** Automata states */
 #define flag_sleep 0
 #define flag_start 1
-#define flag_stop 2
-#define flag_scan 3
+#define flag_scan 2
+#define flag_stop 3
 #define flag_termination 4
 
 /** @brief struct for holding data about childrens - pids and their status.
