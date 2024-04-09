@@ -1,13 +1,6 @@
 /** @file daemon.c
  *  @brief Main daemon driver.
  *
- *  These empty function definitions are provided
- *  so that stdio will build without complaining.
- *  You will need to fill these functions in. This
- *  is the implementation of the console driver.
- *  Important details about its implementation
- *  should go in these comments.
- *
  *  @author Kacper Hącia (aloneg)
  */
 
@@ -63,7 +56,7 @@ pid_t ppid=0;
  *
  *
  */
-pid_t *children_pids=NULL;
+child_info_ptr children_pids=NULL;
 
 /** @brief count of forked childrens
  *
@@ -74,12 +67,14 @@ int children_count=0;
 /** @brief Fn handles signals - sets flag for overlord.
 *
 */
-void handle_signals(int sig) {
+void handle_signals(int sig, siginfo_t* si, void* data) {
 	switch (sig) {
 		case SIGUSR1:
+			critical_lock(SIGUSR2);
 			flag = flag_start;
 		break;
 		case SIGUSR2:
+			critical_lock(SIGUSR1);
 			flag = flag_stop;
 		break;
 
@@ -90,7 +85,6 @@ void handle_signals(int sig) {
 		default:
 		break;
 	}
-	syslog(LOG_INFO, "pid [%d] GOT SIGNAL %d\n",pid, sig);
 }
 
 /** @brief function masks signals input BEFORE critical sections.
@@ -105,7 +99,7 @@ void critical_lock(int sig){
 	//sigaddset(&sigmask, SIGUSR2);
 	sigaddset(&sigmask, SIGTERM);
 	sigprocmask(SIG_BLOCK, &sigmask, NULL);
-	syslog(LOG_DEBUG, "overlord: critical section masked %d.\n", sig);
+	//syslog(LOG_DEBUG, "overlord: critical section masked %d.\n", sig);
 }
 
 
@@ -121,7 +115,7 @@ void critical_unlock(int sig){
 	//sigaddset(&sigmask, SIGUSR2);
 	sigaddset(&sigmask, SIGTERM);
 	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
-	syslog(LOG_DEBUG, "overlord: critical section UNmasked %d.\n", sig);
+	//syslog(LOG_DEBUG, "overlord: critical section UNmasked %d.\n", sig);
 	//signal(SIGUSR1, handle_signals);
 	//signal(SIGUSR2, handle_signals);
 	//syslog(LOG_DEBUG, "overlord: critical section lock DISABLED (OFF).\n");
@@ -134,7 +128,7 @@ void critical_unlock(int sig){
 int signal_children(int sig){
 	int i = 0;
 	while(i<children_count){
-		kill(*(children_pids+i),sig);
+		kill((children_pids+i)->status,sig);
 		i++;
 	}
 	return 0;
@@ -155,7 +149,7 @@ int signal_children_wait(int sig){
 	/** For each children pid */
 	while(i<children_count){
 		/** send sig signal */
-		kill(*(children_pids+i),sig);
+		kill((children_pids+i)->status,sig);
 		i++;
 	}
 	for (i = 0; i < children_count; i++){
@@ -173,11 +167,11 @@ int signal_children_wait(int sig){
  */
 int check_children_alive(){
 	int status;
-	pid_t *tempchildrenpids = children_pids;
+	child_info_ptr tempchildrenpids = children_pids;
 	int count_of_alive = 0;
 	int i = 0;
 	while (i<children_count){
-		pid_t result = waitpid(*(tempchildrenpids+i), &status, WNOHANG);
+		pid_t result = waitpid((tempchildrenpids+i)->status, &status, WNOHANG);
 		if (result == 0) {
 			// Child still alive
 			count_of_alive++;
@@ -231,15 +225,28 @@ int main(int argc, char** argv){
 	children_count=argc-optind;
 
 	/** Initalizes array for children_pids with memset to 0. */
-	children_pids = malloc(sizeof(pid_t)*children_count);
+	children_pids = malloc(sizeof(child_info)*children_count);
 	if(!children_pids)
 		abort();
-	memset(children_pids, 0, children_count);
+	memset((void*) children_pids, 0, children_count*sizeof(child_info));
 
 	/** Registers handlers for SIGUSRs. */
-	signal(SIGUSR1, handle_signals);
-	signal(SIGUSR2, handle_signals);
-
+	struct sigaction sa1;
+	memset(&sa1, 0, sizeof(sa1));
+	sa1.sa_flags = SA_SIGINFO;
+	sa1.sa_sigaction = handle_signals;
+	if (sigaction(SIGUSR1, &sa1, 0) == -1) {
+		free((void*)children_pids);
+		return 120;
+	}
+	struct sigaction sa2;
+	memset(&sa2, 0, sizeof(sa2));
+	sa2.sa_flags = SA_SIGINFO;
+	sa2.sa_sigaction = handle_signals;
+	if (sigaction(SIGUSR2, &sa2, 0) == -1) {
+		free((void*)children_pids);
+		return 121;
+	}
 	
 	/** Deamonize program */
 	daemon(1, 0);
@@ -265,21 +272,20 @@ int overlord(int argc, char**argv){
 
 	if(pid){//overlord process
 		pid = getpid();
-		
-		signal(SIGTERM, handle_signals);
-		sigset_t sigmask;
-		sigemptyset(&sigmask);
-		sigfillset(&sigmask);
-		//sigaddset(&sigmask, SIGUSR1);
-		//sigaddset(&sigmask, SIGUSR2);
-		//sigaddset(&sigmask, SIGCHLD);
-		//sigaddset(&sigmask, SIGCHLD);
+		/** Handle SIGTERM */
+		struct sigaction sa1;
+		memset(&sa1, 0, sizeof(sa1));
+		sa1.sa_flags = SA_SIGINFO;
+		sa1.sa_sigaction = handle_signals;
+		if (sigaction(SIGTERM, &sa1, 0) == -1) {
+			return 123;
+		}
 
 		while (flag!=flag_termination) {
 			//add life validation
 			switch (flag) {
 				case flag_start: /** case flag==1: send SIGUSR1 to child to start search */
-					critical_lock(SIGUSR2);
+
 					syslog(LOG_INFO, "overlord: GOT SIGUSR1, sending\n");
 					signal_children(SIGUSR1);
 					syslog(LOG_INFO, "overlord: got ACK SIGUSR1\n");
@@ -288,7 +294,7 @@ int overlord(int argc, char**argv){
 				break;
 
 				case flag_stop: /** case flag==2: send SIGUSR2 to child to stop search */
-					critical_lock(SIGUSR1);
+
 					syslog(LOG_INFO, "overlord: GOT SIGUSR2, sending\n");
 					signal_children(SIGUSR2);
 					syslog(LOG_INFO, "overlord: got ACK SIGUSR2\n");
@@ -298,8 +304,6 @@ int overlord(int argc, char**argv){
 
 				case flag_scan:
 					syslog(LOG_DEBUG, "overlord: flag_scan case\n");
-					//sigwait(&sigmask, &status);
-					//sleep(sleep_time);
 					pause();
 				break;
 
@@ -309,6 +313,7 @@ int overlord(int argc, char**argv){
 				break;
 
 				case flag_termination:
+
 					//signal_children(SIGTERM);
 				break;
 
@@ -318,79 +323,28 @@ int overlord(int argc, char**argv){
 		assert(!pid);
 	}
 
+	syslog(LOG_DEBUG, "overlord: flag_termination case\n");
 	signal_children(SIGTERM);
 	
 	for(int i=optind;i<argc;i++){
 		wait(NULL);
 	}
-	free(children_pids);
+	free((void*) children_pids);
 	//not implemented
 	return 0;
 }
 
 int create_subdaemons(int argc){
-	pid_t *temp_children_pids_ptr = children_pids;
 	/** From getopt, we use optind to finde first pattern argument. For each pattern create process. */
 	for(int i=0;i<children_count;i++){
 		pid=fork();
 		if(pid == 0){
 			subdaemon(i);
 		}
-		*(temp_children_pids_ptr++)=pid;
+		(children_pids+i)->pid=pid;
+		(children_pids+i)->status=flag_sleep;
 	}
 	return 0;
 }
 
-int subdaemon(int index){
-	pid=getpid();
-	ppid=getppid();
-	free(children_pids);
-	/** In each new process, launch seeker driver function ...() */
-	while (1) {
-		switch (flag) {
-			case flag_start:
-				syslog(LOG_INFO, "child [%d] GOT SIGUSR1, starting search\n", pid);
-				//action();
-				//send_ack_parent(SIGCHLD);
-				flag = flag_scan;
-			break;
 
-			case flag_stop:
-				syslog(LOG_INFO, "child [%7d] GOT SIGUSR2, stopping search\n", pid);
-				//stop action
-			break;
-
-			case flag_scan:
-				//WARNING - development and debug pause
-				pause();
-			break;
-
-			case flag_sleep:
-				pause();
-			break;
-
-			default:
-				pause();
-
-			break;
-		}
-	}
-	//printf("[son] pid %d from [parent] pid %d\n",getpid(),getppid());
-	exit(0);
-
-}
-
-/** @brief Prints help page.
-*
-* @param stream output of message.
-* @param exit_code value to return from function.
-*/
-int print_usage(FILE* stream, int exit_code){
-	fprintf(stream, "Usage: %s [-v] [-t n] [pattern1 pattern2 ...]\n", program_name);
-	fprintf(stream,
-		"  -h   --help             Shows this help and exits.\n"
-		"  -t n --time n           Sets Daemon sleep time for n seconds.\n"
-		"  -v   --verbose          Enables verbose logging.\n"
-		);
-	return exit_code;
-}

@@ -70,3 +70,18 @@ void options_handler(int argc, char** argv){
 	}
 
 }
+
+/** @brief Prints help page.
+*
+* @param stream output of message.
+* @param exit_code value to return from function.
+*/
+int print_usage(FILE* stream, int exit_code){
+	fprintf(stream, "Usage: %s [-v] [-t n] [pattern1 pattern2 ...]\n", program_name);
+	fprintf(stream,
+		"  -h   --help             Shows this help and exits.\n"
+		"  -t n --time n           Sets Daemon sleep time for n seconds.\n"
+		"  -v   --verbose          Enables verbose logging.\n"
+		);
+	return exit_code;
+}
