@@ -18,11 +18,21 @@
 
 #define __file_seeker_max_arg_len 127
 
+/** Automata states */
 #define flag_sleep 0
 #define flag_start 1
 #define flag_stop 2
 #define flag_scan 3
 #define flag_termination 4
+
+/** @brief struct for holding data about childrens - pids and their status.
+*
+*
+*/
+typedef volatile struct chld_info {
+	pid_t pid;
+	int status;
+} child_info, * volatile child_info_ptr;
 
 int print_usage(FILE* stream, int exit_code);
 int overlord(int argc, char**argv);
