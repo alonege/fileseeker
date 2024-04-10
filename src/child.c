@@ -28,6 +28,19 @@ void critical_unlock_child(){
 	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
 }
 
+/** @brief send SIGCHLD signal (aka ACK) to parent process
+ *
+ *
+ */
+int send_ack_parent(int sig){
+	if(ppid>0){
+		kill(ppid, sig);
+		syslog(LOG_INFO, "child: ACKed with SIGCHLD\n");
+		return 0;
+	} else {
+		return 1;
+	}
+}
 
 /** @brief Fn handles signals - sets flag for children.
 *
@@ -76,20 +89,31 @@ int subdaemon(int index){
 				syslog(LOG_DEBUG, "GOT SIGUSR1, starting search\n");
 				critical_unlock_child();
 				//work to do - fn call with while flag==flag_scan loop/recursive checking
-				if(flag==flag_scan){
-					//scan ended by itself
-					syslog(LOG_DEBUG, "succesfully ended search\n");
-					flag=flag_stop;//let's inform overlord
-				} else if (flag==flag_stop) {
-					syslog(LOG_DEBUG, "GOT SIGUSR2, stopping search\n");
-					flag=flag_sleep;
-				} else {
-					abort();
+				switch (flag) {
+					case flag_scan:
+						//scan ended by itself
+						syslog(LOG_DEBUG, "succesfully ended search\n");
+						flag=flag_stop;//let's inform overlord
+					break;
+
+					case flag_stop:
+						syslog(LOG_DEBUG, "GOT SIGUSR2, stopping search\n");
+						flag=flag_sleep;
+					break;
+
+					case flag_start:
+						syslog(LOG_DEBUG, "GOT SIGUSR1 during search, restarting it\n");
+					break;
+
+					default:
+						abort();
+					break;
 				}
 			break;
 
 			case flag_stop:
 				//stop action
+				send_ack_parent(SIGUSR2);
 				flag = flag_sleep;
 				critical_unlock_child();
 			break;

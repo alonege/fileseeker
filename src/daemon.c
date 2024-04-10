@@ -187,20 +187,6 @@ int check_children_alive(){
 		return 1;
 }
 
-/** @brief send SIGCHLD signal (aka ACK) to parent process
- *
- *
- */
-int send_ack_parent(int sig){
-	if(ppid>0){
-		kill(ppid, sig);
-		syslog(LOG_INFO, "child: ACKed with SIGCHLD\n");
-		return 0;
-	} else {
-		return 1;
-	}
-}
-
 /** @brief Fn is main driver for other functionalities.
 *
 * Function takes table of char* to arguments wchich are formats for usage in regex.
