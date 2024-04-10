@@ -12,6 +12,8 @@
 #include <string.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <semaphore.h>
+#include <sys/mman.h>
 
 #ifndef __file_seeker_daemon
 #define __file_seeker_daemon
@@ -31,7 +33,7 @@
 */
 typedef volatile struct chld_info {
 	pid_t pid;
-	int status;
+	sig_atomic_t status;
 } child_info, * volatile child_info_ptr;
 
 int print_usage(FILE* stream, int exit_code);

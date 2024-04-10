@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <bits/getopt_core.h>
 #include <bits/types/sigset_t.h>
+#include <semaphore.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -64,10 +65,13 @@ child_info_ptr children_pids=NULL;
  */
 int children_count=0;
 
+/** @brief semaphore for synchronizing overlord and children work */
+sem_t *sema;
+
 /** @brief Function checks if pid is child of overlord. if yes, ret child number; else ret 0.
  *
  */
-int volatile is_child(pid_t checked_pid){
+volatile int is_child(pid_t checked_pid){
 	int i = 0;
 	while (i<children_count){
 		if((children_pids+i)->pid==checked_pid)
@@ -77,18 +81,15 @@ int volatile is_child(pid_t checked_pid){
 	return -1;
 }
 
-/** @brief Function checks number of child with status status.
+/** @brief Function checks semaphore value - which tells us about number of sleeping children.
  *
  */
-int volatile child_status_count(int status){
-	int i = 0;
-	int status_count=0;
-	while (i<children_count){
-		if((children_pids+i)->status==status)
-			status_count++;
-		i++;
+volatile int child_sleep_count(){
+	int semval;
+	if (!sem_getvalue(sema, &semval)){
+		return semval;
 	}
-	return status_count;
+	else return -1;
 }
 
 /** @brief Function checks number of child with status status.
@@ -99,6 +100,14 @@ void children_status_set(int status){
 	while (i<children_count){
 		//if((children_pids+i)->status!=flag_termination)
 			(children_pids+i)->status=status;
+		i++;
+	}
+}
+
+void children_print_states(){
+	int i = 0;
+	while (i<children_count){
+		syslog(LOG_DEBUG, "status: %d -> %d \n",(children_pids+i)->pid, (children_pids+i)->status);
 		i++;
 	}
 }
@@ -245,6 +254,18 @@ int main(int argc, char** argv){
 		abort();
 	memset((void*) children_pids, 0, children_count*sizeof(child_info));
 
+	/* place semaphore in shared memory */
+	sema = mmap(NULL, sizeof(*sema), PROT_READ |PROT_WRITE,MAP_SHARED|MAP_ANONYMOUS, -1, 0);
+	if (sema == MAP_FAILED) {
+		perror("mmap");
+		exit(EXIT_FAILURE);
+	}
+	/* create/initialize semaphore */
+	if ( sem_init(sema, 1, children_count) < 0) {
+		perror("sem_init");
+		exit(EXIT_FAILURE);
+	}
+
 	/** Registers handlers for SIGUSRs. */
 	struct sigaction sa1;
 	memset(&sa1, 0, sizeof(sa1));
@@ -256,6 +277,7 @@ int main(int argc, char** argv){
 	}
 	struct sigaction sa2;
 	memset(&sa2, 0, sizeof(sa2));
+	//sa2.sa_flags = SA_SIGINFO|SA_NODEFER;
 	sa2.sa_flags = SA_SIGINFO;
 	sa2.sa_sigaction = handle_signals;
 	if (sigaction(SIGUSR2, &sa2, 0) == -1) {
@@ -305,8 +327,8 @@ int overlord(int argc, char**argv){
 			return 121;
 		}
 
-		//critical_lock(SIGUSR2);
-		//flag = flag_start;
+		critical_lock(SIGUSR2);
+		flag = flag_start;
 		//raise(SIGUSR1);
 
 		while (flag!=flag_termination) {
@@ -334,14 +356,16 @@ int overlord(int argc, char**argv){
 					syslog(LOG_DEBUG, "overlord: flag_scan case\n");
 					//restart children if needed
 					/** if all children are in state of sleeping, it means all children have ended work. */
-					if(child_status_count(flag_sleep)==children_count){
+					if(child_sleep_count()==children_count){
 						flag=flag_sleep;
-						syslog(LOG_INFO, "overlord: got all ACKs SIGUSR2 from children\n");
+						syslog(LOG_INFO, "overlord: all children sleeps\n");
 					} else {
-						syslog(LOG_INFO, "overlord: %d children send ack\n",child_status_count(flag_sleep));
+						syslog(LOG_INFO, "overlord: %d children sleep\n",child_sleep_count());
 					}
+					children_print_states();
 					critical_unlock(SIGUSR1);
-					pause();
+					if(flag==flag_scan)
+						pause();
 				break;
 
 				case flag_sleep:
@@ -349,6 +373,10 @@ int overlord(int argc, char**argv){
 					//restart children if needed
 					critical_unlock(SIGUSR1);
 					sleep(sleep_time);
+					if(flag==flag_sleep){
+						critical_lock(SIGUSR1);
+						flag=flag_start;
+					}
 				break;
 
 				case flag_termination:

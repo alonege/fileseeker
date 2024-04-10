@@ -1,4 +1,5 @@
 #include "fileseeker.h"
+#include <semaphore.h>
 #include <stdlib.h>
 
 /** @brief function masks signals input BEFORE critical sections.
@@ -87,6 +88,7 @@ int subdaemon(int index){
 		switch (flag) {
 			case flag_start:
 				flag=flag_scan;
+				sem_wait(sema);
 				syslog(LOG_DEBUG, "GOT SIGUSR1, starting search\n");
 				syslog(LOG_DEBUG, "CHILD: unlocked\n");
 				critical_unlock_child();
@@ -108,9 +110,11 @@ int subdaemon(int index){
 					break;
 
 					default:
+						sem_post(sema);
 						abort();
 					break;
 				}
+				sem_post(sema);
 			break;
 
 			case flag_stop:
