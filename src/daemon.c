@@ -67,28 +67,40 @@ int children_count=0;
 /** @brief Function checks if pid is child of overlord. if yes, ret child number; else ret 0.
  *
  */
-int is_child(pid_t checked_pid){
+int volatile is_child(pid_t checked_pid){
 	int i = 0;
 	while (i<children_count){
-		if((children_pids)->pid==checked_pid)
+		if((children_pids+i)->pid==checked_pid)
 			return i;
 		i++;
 	}
-	return 0;
+	return -1;
 }
 
 /** @brief Function checks number of child with status status.
  *
  */
-int child_status_count(int status){
+int volatile child_status_count(int status){
 	int i = 0;
 	int status_count=0;
 	while (i<children_count){
-		if((children_pids)->status==status)
+		if((children_pids+i)->status==status)
 			status_count++;
 		i++;
 	}
 	return status_count;
+}
+
+/** @brief Function checks number of child with status status.
+ *
+ */
+void children_status_set(int status){
+	int i = 0;
+	while (i<children_count){
+		//if((children_pids+i)->status!=flag_termination)
+			(children_pids+i)->status=status;
+		i++;
+	}
 }
 
 
@@ -97,7 +109,7 @@ int child_status_count(int status){
 */
 void handle_signals(int sig, siginfo_t* si, void* data) {
 
-	int temp=0;
+	int volatile temp=0;
 	switch (sig) {
 		case SIGUSR1:
 			critical_lock(SIGUSR2);
@@ -106,7 +118,8 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 		case SIGUSR2:
 			critical_lock(SIGUSR1);
 			/** if SIGUSR2 wasn't send by child, we should handle it */
-			if((temp=is_child(si->si_pid))){
+			temp=is_child(si->si_pid);
+			if(temp>-1){
 				//set child to done
 				(children_pids+temp)->status=flag_sleep;
 			} else {
@@ -116,10 +129,12 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 		break;
 
 		case SIGTERM:
+			critical_lock(SIGUSR1);
 			flag = flag_termination;
 		break;
 
 		case SIGCHLD:
+			critical_lock(SIGUSR1);
 			/** let's handle SIGCHLD. we set flag_termination for si_pid wchich sended SIGCHLD */
 			temp=is_child(si->si_pid);
 			(children_pids+temp)->status=flag_termination;
@@ -290,14 +305,17 @@ int overlord(int argc, char**argv){
 			return 121;
 		}
 
+		//critical_lock(SIGUSR2);
+		//flag = flag_start;
+		raise(SIGUSR1);
+
 		while (flag!=flag_termination) {
 			//add life validation
 			switch (flag) {
 				case flag_start: /** case flag==1: send SIGUSR1 to child to start search */
-
 					syslog(LOG_INFO, "overlord: GOT SIGUSR1, sending\n");
+					children_status_set(flag_scan);
 					signal_children(SIGUSR1);
-					syslog(LOG_INFO, "overlord: got ACK SIGUSR1\n");
 					flag = flag_scan;
 					critical_unlock(SIGUSR2);
 				break;
@@ -305,21 +323,31 @@ int overlord(int argc, char**argv){
 				case flag_stop: /** case flag==2: send SIGUSR2 to child to stop search */
 
 					syslog(LOG_INFO, "overlord: GOT SIGUSR2, sending\n");
+					children_status_set(flag_sleep);
 					signal_children(SIGUSR2);
-					syslog(LOG_INFO, "overlord: got ACK SIGUSR2\n");
+					//syslog(LOG_INFO, "overlord: got ACK SIGUSR2\n");
 					flag = flag_sleep;
 					critical_unlock(SIGUSR1);
 				break;
 
 				case flag_scan:
 					syslog(LOG_DEBUG, "overlord: flag_scan case\n");
-					if(child_status_count(flag_sleep)==children_count)
+					//restart children if needed
+					/** if all children are in state of sleeping, it means all children have ended work. */
+					if(child_status_count(flag_sleep)==children_count){
 						flag=flag_sleep;
+						syslog(LOG_INFO, "overlord: got all ACKs SIGUSR2 from children\n");
+					} else {
+						syslog(LOG_INFO, "overlord: %d children send ack\n",child_status_count(flag_sleep));
+					}
+					critical_unlock(SIGUSR1);
 					pause();
 				break;
 
 				case flag_sleep:
 					syslog(LOG_DEBUG, "overlord: flag_sleep case\n");
+					//restart children if needed
+					critical_unlock(SIGUSR1);
 					sleep(sleep_time);
 				break;
 
@@ -353,6 +381,7 @@ int create_subdaemons(int argc){
 			subdaemon(i);
 		}
 		(children_pids+i)->pid=pid;
+		syslog(LOG_DEBUG, "overlord: created child with pid %d\n", (children_pids+i)->pid);
 		(children_pids+i)->status=flag_sleep;
 	}
 	return 0;

@@ -10,7 +10,7 @@ void critical_lock_child(){
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, SIGUSR1);
 	sigaddset(&sigmask, SIGUSR2);
-	sigaddset(&sigmask, SIGTERM);
+	//sigaddset(&sigmask, SIGTERM);
 	sigprocmask(SIG_BLOCK, &sigmask, NULL);
 }
 
@@ -24,7 +24,7 @@ void critical_unlock_child(){
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, SIGUSR1);
 	sigaddset(&sigmask, SIGUSR2);
-	sigaddset(&sigmask, SIGTERM);
+	//sigaddset(&sigmask, SIGTERM);
 	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
 }
 
@@ -35,7 +35,7 @@ void critical_unlock_child(){
 int send_ack_parent(int sig){
 	if(ppid>0){
 		kill(ppid, sig);
-		syslog(LOG_INFO, "child: ACKed with SIGCHLD\n");
+		syslog(LOG_INFO, "child: ACKed\n");
 		return 0;
 	} else {
 		return 1;
@@ -87,6 +87,7 @@ int subdaemon(int index){
 			case flag_start:
 				flag=flag_scan;
 				syslog(LOG_DEBUG, "GOT SIGUSR1, starting search\n");
+				syslog(LOG_DEBUG, "CHILD: unlocked\n");
 				critical_unlock_child();
 				//work to do - fn call with while flag==flag_scan loop/recursive checking
 				switch (flag) {
@@ -113,13 +114,16 @@ int subdaemon(int index){
 
 			case flag_stop:
 				//stop action
+				syslog(LOG_DEBUG, "CHILD: flag_stop case\n");
 				send_ack_parent(SIGUSR2);
 				flag = flag_sleep;
+				syslog(LOG_DEBUG, "CHILD: unlocked\n");
 				critical_unlock_child();
 			break;
 
 
 			case flag_sleep:
+				syslog(LOG_DEBUG, "CHILD: flag_sleep case\n");
 				pause();
 			break;
 
