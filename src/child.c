@@ -10,7 +10,7 @@ void critical_lock_child(){
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, SIGUSR1);
 	sigaddset(&sigmask, SIGUSR2);
-	sigaddset(&sigmask, SIGTERM);
+	//sigaddset(&sigmask, SIGTERM);
 	sigprocmask(SIG_BLOCK, &sigmask, NULL);
 }
 
@@ -24,10 +24,23 @@ void critical_unlock_child(){
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, SIGUSR1);
 	sigaddset(&sigmask, SIGUSR2);
-	sigaddset(&sigmask, SIGTERM);
+	//sigaddset(&sigmask, SIGTERM);
 	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
 }
 
+/** @brief send SIGCHLD signal (aka ACK) to parent process
+ *
+ *
+ */
+int send_ack_parent(int sig){
+	if(ppid>0){
+		kill(ppid, sig);
+		syslog(LOG_INFO, "child: ACKed\n");
+		return 0;
+	} else {
+		return 1;
+	}
+}
 
 /** @brief Fn handles signals - sets flag for children.
 *
@@ -51,6 +64,7 @@ void handle_signals_child(int sig, siginfo_t* si, void* data) {
 }
 
 int subdaemon(int index){
+	flag=flag_sleep;
 	struct sigaction sa1;
 	memset(&sa1, 0, sizeof(sa1));
 	sa1.sa_flags = SA_SIGINFO;
@@ -74,28 +88,44 @@ int subdaemon(int index){
 			case flag_start:
 				flag=flag_scan;
 				syslog(LOG_DEBUG, "GOT SIGUSR1, starting search\n");
+				syslog(LOG_DEBUG, "CHILD: unlocked\n");
 				critical_unlock_child();
 				//work to do - fn call with while flag==flag_scan loop/recursive checking
-				if(flag==flag_scan){
-					//scan ended by itself
-					syslog(LOG_DEBUG, "succesfully ended search\n");
-					flag=flag_stop;//let's inform overlord
-				} else if (flag==flag_stop) {
-					syslog(LOG_DEBUG, "GOT SIGUSR2, stopping search\n");
-					flag=flag_sleep;
-				} else {
-					abort();
+				switch (flag) {
+					case flag_scan:
+						//scan ended by itself
+						syslog(LOG_DEBUG, "succesfully ended search\n");
+						flag=flag_stop;//let's inform overlord
+					break;
+
+					case flag_stop:
+						syslog(LOG_DEBUG, "GOT SIGUSR2, stopping search\n");
+						flag=flag_sleep;
+					break;
+
+					case flag_start:
+						syslog(LOG_DEBUG, "GOT SIGUSR1 during search, restarting it\n");
+					break;
+
+					default:
+						abort();
+					break;
 				}
 			break;
 
 			case flag_stop:
 				//stop action
+				syslog(LOG_DEBUG, "CHILD: flag_stop case\n");
+				send_ack_parent(SIGUSR2);
+				syslog(LOG_DEBUG, "CHILD: sended SIGUSR2 to ppid %d\n", ppid);
 				flag = flag_sleep;
+				syslog(LOG_DEBUG, "CHILD: unlocked\n");
 				critical_unlock_child();
 			break;
 
 
 			case flag_sleep:
+				syslog(LOG_DEBUG, "CHILD: flag_sleep case\n");
 				pause();
 			break;
 
