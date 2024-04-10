@@ -64,6 +64,7 @@ void handle_signals_child(int sig, siginfo_t* si, void* data) {
 }
 
 int subdaemon(int index){
+	flag=flag_sleep;
 	struct sigaction sa1;
 	memset(&sa1, 0, sizeof(sa1));
 	sa1.sa_flags = SA_SIGINFO;
@@ -116,6 +117,7 @@ int subdaemon(int index){
 				//stop action
 				syslog(LOG_DEBUG, "CHILD: flag_stop case\n");
 				send_ack_parent(SIGUSR2);
+				syslog(LOG_DEBUG, "CHILD: sended SIGUSR2 to ppid %d\n", ppid);
 				flag = flag_sleep;
 				syslog(LOG_DEBUG, "CHILD: unlocked\n");
 				critical_unlock_child();

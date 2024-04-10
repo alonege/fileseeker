@@ -38,13 +38,13 @@ int sleep_time = 60;
  *
  * flag for SIGUSRs - 0 - no flag, 1 - SIGUSR1, 2 - SIGUSR2
  */
-volatile sig_atomic_t flag = 0;
+volatile sig_atomic_t flag = flag_start;
 
 /** @brief global pid for thread
  *
  * Global pid for thread - used in work, handling SIGUSRs etc
  */
-pid_t pid;
+volatile pid_t pid;
 
 /** @brief global parent pid for thread
  *
@@ -183,7 +183,7 @@ void critical_unlock(int sig){
 int signal_children(int sig){
 	int i = 0;
 	while(i<children_count){
-		kill((children_pids+i)->status,sig);
+		kill((children_pids+i)->pid,sig);
 		i++;
 	}
 	return 0;
@@ -307,7 +307,7 @@ int overlord(int argc, char**argv){
 
 		//critical_lock(SIGUSR2);
 		//flag = flag_start;
-		raise(SIGUSR1);
+		//raise(SIGUSR1);
 
 		while (flag!=flag_termination) {
 			//add life validation
