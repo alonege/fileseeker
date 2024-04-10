@@ -64,10 +64,40 @@ child_info_ptr children_pids=NULL;
  */
 int children_count=0;
 
+/** @brief Function checks if pid is child of overlord. if yes, ret child number; else ret 0.
+ *
+ */
+int is_child(pid_t checked_pid){
+	int i = 0;
+	while (i<children_count){
+		if((children_pids)->pid==checked_pid)
+			return i;
+		i++;
+	}
+	return 0;
+}
+
+/** @brief Function checks number of child with status status.
+ *
+ */
+int child_status_count(int status){
+	int i = 0;
+	int status_count=0;
+	while (i<children_count){
+		if((children_pids)->status==status)
+			status_count++;
+		i++;
+	}
+	return status_count;
+}
+
+
 /** @brief Fn handles signals - sets flag for overlord.
 *
 */
 void handle_signals(int sig, siginfo_t* si, void* data) {
+
+	int temp=0;
 	switch (sig) {
 		case SIGUSR1:
 			critical_lock(SIGUSR2);
@@ -75,11 +105,24 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 		break;
 		case SIGUSR2:
 			critical_lock(SIGUSR1);
-			flag = flag_stop;
+			/** if SIGUSR2 wasn't send by child, we should handle it */
+			if((temp=is_child(si->si_pid))){
+				//set child to done
+				(children_pids+temp)->status=flag_sleep;
+			} else {
+				/** not a child */
+				flag = flag_stop;
+			}
 		break;
 
 		case SIGTERM:
 			flag = flag_termination;
+		break;
+
+		case SIGCHLD:
+			/** let's handle SIGCHLD. we set flag_termination for si_pid wchich sended SIGCHLD */
+			temp=is_child(si->si_pid);
+			(children_pids+temp)->status=flag_termination;
 		break;
 
 		default:
@@ -94,12 +137,12 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 void critical_lock(int sig){
 	sigset_t sigmask;
 	sigemptyset(&sigmask);
-	sigaddset(&sigmask, sig);
-	//sigaddset(&sigmask, SIGUSR1);
-	//sigaddset(&sigmask, SIGUSR2);
+	//sigaddset(&sigmask, sig);
+	sigaddset(&sigmask, SIGUSR1);
+	sigaddset(&sigmask, SIGUSR2);
 	sigaddset(&sigmask, SIGTERM);
+	sigaddset(&sigmask, SIGCHLD);
 	sigprocmask(SIG_BLOCK, &sigmask, NULL);
-	//syslog(LOG_DEBUG, "overlord: critical section masked %d.\n", sig);
 }
 
 
@@ -110,15 +153,12 @@ void critical_lock(int sig){
 void critical_unlock(int sig){
 	sigset_t sigmask;
 	sigemptyset(&sigmask);
-	sigaddset(&sigmask, sig);
-	//sigaddset(&sigmask, SIGUSR1);
-	//sigaddset(&sigmask, SIGUSR2);
+	//sigaddset(&sigmask, sig);
+	sigaddset(&sigmask, SIGUSR1);
+	sigaddset(&sigmask, SIGUSR2);
 	sigaddset(&sigmask, SIGTERM);
+	sigaddset(&sigmask, SIGCHLD);
 	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
-	//syslog(LOG_DEBUG, "overlord: critical section UNmasked %d.\n", sig);
-	//signal(SIGUSR1, handle_signals);
-	//signal(SIGUSR2, handle_signals);
-	//syslog(LOG_DEBUG, "overlord: critical section lock DISABLED (OFF).\n");
 }
 
 //WARNING - untested!!!!
@@ -131,32 +171,6 @@ int signal_children(int sig){
 		kill((children_pids+i)->status,sig);
 		i++;
 	}
-	return 0;
-}
-
-//WARNING - untested!!!!
-/** @brief send signal sig to all forked children and awaits for SIGCHLD response.
- *
- */
-int signal_children_wait(int sig){
-	sigset_t sigmask;
-	sigemptyset(&sigmask);
-	sigaddset(&sigmask, SIGCHLD);
-	sigaddset(&sigmask, SIGUSR1);
-	sigaddset(&sigmask, SIGUSR2);
-	int status=0;
-	int i = 0;
-	/** For each children pid */
-	while(i<children_count){
-		/** send sig signal */
-		kill((children_pids+i)->status,sig);
-		i++;
-	}
-	for (i = 0; i < children_count; i++){
-		sigwait(&sigmask, &status);
-		syslog(LOG_INFO, "overlord: WAITING FOR CHILD SIGNAL\n");
-	}
-
 	return 0;
 }
 
@@ -264,7 +278,16 @@ int overlord(int argc, char**argv){
 		sa1.sa_flags = SA_SIGINFO;
 		sa1.sa_sigaction = handle_signals;
 		if (sigaction(SIGTERM, &sa1, 0) == -1) {
+			free((void*)children_pids);
 			return 123;
+		}	
+		struct sigaction sa2;
+		memset(&sa2, 0, sizeof(sa2));
+		sa2.sa_flags = SA_SIGINFO;
+		sa2.sa_sigaction = handle_signals;
+		if (sigaction(SIGCHLD, &sa2, 0) == -1) {
+			free((void*)children_pids);
+			return 121;
 		}
 
 		while (flag!=flag_termination) {
@@ -290,6 +313,8 @@ int overlord(int argc, char**argv){
 
 				case flag_scan:
 					syslog(LOG_DEBUG, "overlord: flag_scan case\n");
+					if(child_status_count(flag_sleep)==children_count)
+						flag=flag_sleep;
 					pause();
 				break;
 
