@@ -130,7 +130,7 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 			temp=is_child(si->si_pid);
 			if(temp>-1){
 				//set child to done
-				(children_pids+temp)->status=flag_sleep;
+				//(children_pids+temp)->status=flag_sleep;
 			} else {
 				/** not a child */
 				flag = flag_stop;
@@ -163,7 +163,7 @@ void critical_lock(int sig){
 	sigemptyset(&sigmask);
 	//sigaddset(&sigmask, sig);
 	sigaddset(&sigmask, SIGUSR1);
-	sigaddset(&sigmask, SIGUSR2);
+	//sigaddset(&sigmask, SIGUSR2);
 	sigaddset(&sigmask, SIGTERM);
 	sigaddset(&sigmask, SIGCHLD);
 	sigprocmask(SIG_BLOCK, &sigmask, NULL);
@@ -179,7 +179,7 @@ void critical_unlock(int sig){
 	sigemptyset(&sigmask);
 	//sigaddset(&sigmask, sig);
 	sigaddset(&sigmask, SIGUSR1);
-	sigaddset(&sigmask, SIGUSR2);
+	//sigaddset(&sigmask, SIGUSR2);
 	sigaddset(&sigmask, SIGTERM);
 	sigaddset(&sigmask, SIGCHLD);
 	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
