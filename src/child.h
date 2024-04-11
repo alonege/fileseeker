@@ -11,6 +11,6 @@ extern volatile pid_t pid;
 extern volatile pid_t ppid;
 extern child_info_ptr children_pids;
 extern int children_count;
-
+extern sem_t *sema;
 
 #endif

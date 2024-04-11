@@ -1,4 +1,6 @@
 #include "fileseeker.h"
+#include <semaphore.h>
+#include <signal.h>
 #include <stdlib.h>
 
 /** @brief function masks signals input BEFORE critical sections.
@@ -35,12 +37,15 @@ void critical_unlock_child(){
 int send_ack_parent(int sig){
 	if(ppid>0){
 		kill(ppid, sig);
-		syslog(LOG_INFO, "child: ACKed\n");
+		//syslog(LOG_INFO, "child: ACKed\n");
 		return 0;
 	} else {
 		return 1;
 	}
 }
+
+/** @brief variable tells us if we ended from sigusr2 (1) or not (0) */
+volatile sig_atomic_t got_sigusr2 = 0;
 
 /** @brief Fn handles signals - sets flag for children.
 *
@@ -55,6 +60,7 @@ void handle_signals_child(int sig, siginfo_t* si, void* data) {
 			case SIGUSR2:
 				critical_lock_child();
 				flag = flag_stop;
+				got_sigusr2 = 1;
 			break;
 
 			default:
@@ -87,45 +93,61 @@ int subdaemon(int index){
 		switch (flag) {
 			case flag_start:
 				flag=flag_scan;
-				syslog(LOG_DEBUG, "GOT SIGUSR1, starting search\n");
-				syslog(LOG_DEBUG, "CHILD: unlocked\n");
+				sem_wait(sema);
+				if(verbose)
+					syslog(LOG_DEBUG, "child: GOT SIGUSR1\n");
+				if(verbose)
+					syslog(LOG_DEBUG, "child: woke up\n");
+				//syslog(LOG_DEBUG, "CHILD: unlocked\n");
 				critical_unlock_child();
 				//work to do - fn call with while flag==flag_scan loop/recursive checking
+				//
+				sleep(60);
+				//TEMPORARY SLEEP FOR SIGNAL DEBUG
 				switch (flag) {
 					case flag_scan:
 						//scan ended by itself
-						syslog(LOG_DEBUG, "succesfully ended search\n");
+						//syslog(LOG_DEBUG, "succesfully ended search\n");
 						flag=flag_stop;//let's inform overlord
 					break;
 
 					case flag_stop:
-						syslog(LOG_DEBUG, "GOT SIGUSR2, stopping search\n");
+						if(verbose)
+							syslog(LOG_INFO, "child: GOT SIGUSR2\n");
 						flag=flag_sleep;
 					break;
 
 					case flag_start:
-						syslog(LOG_DEBUG, "GOT SIGUSR1 during search, restarting it\n");
+						if(verbose)
+							syslog(LOG_DEBUG, "child: GOT SIGUSR1 during search, restarting it\n");
 					break;
 
 					default:
+						sem_post(sema);
 						abort();
 					break;
 				}
+				sem_post(sema);
 			break;
 
 			case flag_stop:
+				if(verbose&&got_sigusr2){
+					syslog(LOG_INFO, "child: GOT SIGUSR2\n");
+					got_sigusr2=0;
+				}
 				//stop action
-				syslog(LOG_DEBUG, "CHILD: flag_stop case\n");
+				//syslog(LOG_DEBUG, "CHILD: flag_stop case\n");
 				send_ack_parent(SIGUSR2);
-				syslog(LOG_DEBUG, "CHILD: sended SIGUSR2 to ppid %d\n", ppid);
+				//syslog(LOG_DEBUG, "CHILD: sended SIGUSR2 to ppid %d\n", ppid);
 				flag = flag_sleep;
-				syslog(LOG_DEBUG, "CHILD: unlocked\n");
+				//syslog(LOG_DEBUG, "CHILD: unlocked\n");
 				critical_unlock_child();
 			break;
 
 
 			case flag_sleep:
-				syslog(LOG_DEBUG, "CHILD: flag_sleep case\n");
+				if(verbose)
+					syslog(LOG_DEBUG, "child: went to sleep\n");
 				pause();
 			break;
 
