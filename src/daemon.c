@@ -341,11 +341,17 @@ int overlord(int argc, char**argv){
 			//add life validation
 			switch (flag) {
 				case flag_start: /** case flag==1: send SIGUSR1 to child to start search */
-					children_status_set(flag_scan);
+					//children_status_set(flag_scan);
+					if (verbose)
+						syslog(LOG_INFO, "overlord: woke up\n");
 					signal_children(SIGUSR1);
 					flag = flag_scan;
+
+					if (verbose)
+						syslog(LOG_INFO, "overlord: went to sleep\n");
+					//sleep(1);
+					pause();
 					critical_unlock(SIGUSR2);
-					sleep(1);
 				break;
 
 				case flag_stop: /** case flag==2: send SIGUSR2 to child to stop search */
@@ -372,8 +378,10 @@ int overlord(int argc, char**argv){
 					children_print_states();
 					critical_unlock(SIGUSR1);
 					if(flag==flag_scan&&(!check_semaphore)){
+						syslog(LOG_INFO, "overlord: went to sleep\n");
 						pause();
 					} else {
+						//syslog(LOG_INFO, "overlord: went to short sleep during scan\n");
 						check_semaphore=0;
 						sleep(1);
 					}
