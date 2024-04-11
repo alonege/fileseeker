@@ -168,7 +168,7 @@ void critical_lock(int sig){
 	//sigaddset(&sigmask, sig);
 	sigaddset(&sigmask, SIGUSR1);
 	//sigaddset(&sigmask, SIGUSR2);
-	sigaddset(&sigmask, SIGTERM);
+	//sigaddset(&sigmask, SIGTERM);
 	sigaddset(&sigmask, SIGCHLD);
 	sigprocmask(SIG_BLOCK, &sigmask, NULL);
 }
@@ -184,7 +184,7 @@ void critical_unlock(int sig){
 	//sigaddset(&sigmask, sig);
 	sigaddset(&sigmask, SIGUSR1);
 	//sigaddset(&sigmask, SIGUSR2);
-	sigaddset(&sigmask, SIGTERM);
+	//sigaddset(&sigmask, SIGTERM);
 	sigaddset(&sigmask, SIGCHLD);
 	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
 }
@@ -371,9 +371,9 @@ int overlord(int argc, char**argv){
 					/** if all children are in state of sleeping, it means all children have ended work. */
 					if(child_sleep_count()==children_count){
 						flag=flag_sleep;
-						syslog(LOG_DEBUG, "overlord: all children sleeps\n");
+						//syslog(LOG_DEBUG, "overlord: all children sleeps\n");
 					} else {
-						syslog(LOG_DEBUG, "overlord: %d children sleep\n",child_sleep_count());
+						//syslog(LOG_DEBUG, "overlord: %d children sleep\n",child_sleep_count());
 					}
 					children_print_states();
 					critical_unlock(SIGUSR1);
