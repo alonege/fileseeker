@@ -110,7 +110,7 @@ void children_status_set(int status){
 void children_print_states(){
 	int i = 0;
 	while (i<children_count){
-		syslog(LOG_DEBUG, "status: %d -> %d \n",(children_pids+i)->pid, (children_pids+i)->status);
+		//syslog(LOG_DEBUG, "status: %d -> %d \n",(children_pids+i)->pid, (children_pids+i)->status);
 		i++;
 	}
 }
@@ -311,6 +311,8 @@ int overlord(int argc, char**argv){
 	
 	create_subdaemons(argc);
 
+	//let our children init themself
+	sleep(1+children_count/5);
 	if(pid){//overlord process
 		pid = getpid();
 		/** Handle SIGTERM */
@@ -339,16 +341,16 @@ int overlord(int argc, char**argv){
 			//add life validation
 			switch (flag) {
 				case flag_start: /** case flag==1: send SIGUSR1 to child to start search */
-					syslog(LOG_INFO, "overlord: GOT SIGUSR1, sending\n");
 					children_status_set(flag_scan);
 					signal_children(SIGUSR1);
 					flag = flag_scan;
 					critical_unlock(SIGUSR2);
+					sleep(1);
 				break;
 
 				case flag_stop: /** case flag==2: send SIGUSR2 to child to stop search */
-
-					syslog(LOG_INFO, "overlord: GOT SIGUSR2, sending\n");
+					if (verbose)
+						syslog(LOG_INFO, "overlord: GOT SIGUSR2\n");
 					children_status_set(flag_sleep);
 					signal_children(SIGUSR2);
 					//syslog(LOG_INFO, "overlord: got ACK SIGUSR2\n");
@@ -357,7 +359,8 @@ int overlord(int argc, char**argv){
 				break;
 
 				case flag_scan:
-					syslog(LOG_DEBUG, "overlord: flag_scan case\n");
+					if (verbose)
+						syslog(LOG_INFO, "overlord: woke up\n");
 					//restart children if needed
 					/** if all children are in state of sleeping, it means all children have ended work. */
 					if(child_sleep_count()==children_count){
@@ -377,18 +380,30 @@ int overlord(int argc, char**argv){
 				break;
 
 				case flag_sleep:
-					syslog(LOG_DEBUG, "overlord: flag_sleep case\n");
+					if (verbose)
+						syslog(LOG_INFO, "overlord: went to sleep\n");
 					//restart children if needed
 					critical_unlock(SIGUSR1);
 					sleep(sleep_time);
-					if(flag==flag_sleep){
-						critical_lock(SIGUSR1);
-						flag=flag_start;
+					switch (flag) {
+						case flag_sleep:
+							critical_lock(SIGUSR1);
+							flag=flag_start;
+						break;
+						case flag_start:
+							if (verbose)
+								syslog(LOG_INFO, "overlord: GOT SIGUSR1\n");
+						break;
+						default:
+
+						break;
 					}
 				break;
 
 				case flag_termination:
 
+					if (verbose)
+						syslog(LOG_INFO, "overlord: GOT SIGTERM\n");
 					//signal_children(SIGTERM);
 				break;
 

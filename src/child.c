@@ -36,7 +36,7 @@ void critical_unlock_child(){
 int send_ack_parent(int sig){
 	if(ppid>0){
 		kill(ppid, sig);
-		syslog(LOG_INFO, "child: ACKed\n");
+		//syslog(LOG_INFO, "child: ACKed\n");
 		return 0;
 	} else {
 		return 1;
@@ -89,24 +89,29 @@ int subdaemon(int index){
 			case flag_start:
 				flag=flag_scan;
 				sem_wait(sema);
-				syslog(LOG_DEBUG, "GOT SIGUSR1, starting search\n");
-				syslog(LOG_DEBUG, "CHILD: unlocked\n");
+				if(verbose)
+					syslog(LOG_DEBUG, "child: GOT SIGUSR1\n");
+				//syslog(LOG_DEBUG, "CHILD: unlocked\n");
 				critical_unlock_child();
 				//work to do - fn call with while flag==flag_scan loop/recursive checking
+				//
+				sleep(3);
+				//TEMPORARY SLEEP FOR SIGNAL DEBUG
 				switch (flag) {
 					case flag_scan:
 						//scan ended by itself
-						syslog(LOG_DEBUG, "succesfully ended search\n");
+						//syslog(LOG_DEBUG, "succesfully ended search\n");
 						flag=flag_stop;//let's inform overlord
 					break;
 
 					case flag_stop:
-						syslog(LOG_DEBUG, "GOT SIGUSR2, stopping search\n");
+						if(verbose)
+							syslog(LOG_INFO, "child: GOT SIGUSR2\n");
 						flag=flag_sleep;
 					break;
 
 					case flag_start:
-						syslog(LOG_DEBUG, "GOT SIGUSR1 during search, restarting it\n");
+						syslog(LOG_DEBUG, "child: GOT SIGUSR1 during search, restarting it\n");
 					break;
 
 					default:
@@ -118,18 +123,21 @@ int subdaemon(int index){
 			break;
 
 			case flag_stop:
+				if(verbose)
+					syslog(LOG_INFO, "child: GOT SIGUSR2\n");
 				//stop action
-				syslog(LOG_DEBUG, "CHILD: flag_stop case\n");
+				//syslog(LOG_DEBUG, "CHILD: flag_stop case\n");
 				send_ack_parent(SIGUSR2);
-				syslog(LOG_DEBUG, "CHILD: sended SIGUSR2 to ppid %d\n", ppid);
+				//syslog(LOG_DEBUG, "CHILD: sended SIGUSR2 to ppid %d\n", ppid);
 				flag = flag_sleep;
-				syslog(LOG_DEBUG, "CHILD: unlocked\n");
+				//syslog(LOG_DEBUG, "CHILD: unlocked\n");
 				critical_unlock_child();
 			break;
 
 
 			case flag_sleep:
-				syslog(LOG_DEBUG, "CHILD: flag_sleep case\n");
+				if(verbose)
+					syslog(LOG_DEBUG, "child: went to sleep\n");
 				pause();
 			break;
 
