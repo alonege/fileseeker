@@ -68,6 +68,9 @@ int children_count=0;
 /** @brief semaphore for synchronizing overlord and children work */
 sem_t *sema;
 
+/** semaphore change additional flag */
+volatile sig_atomic_t check_semaphore=0;
+
 /** @brief Function checks if pid is child of overlord. if yes, ret child number; else ret 0.
  *
  */
@@ -135,6 +138,7 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 				/** not a child */
 				flag = flag_stop;
 			}
+			check_semaphore=1;
 		break;
 
 		case SIGTERM:
@@ -358,14 +362,18 @@ int overlord(int argc, char**argv){
 					/** if all children are in state of sleeping, it means all children have ended work. */
 					if(child_sleep_count()==children_count){
 						flag=flag_sleep;
-						syslog(LOG_INFO, "overlord: all children sleeps\n");
+						syslog(LOG_DEBUG, "overlord: all children sleeps\n");
 					} else {
-						syslog(LOG_INFO, "overlord: %d children sleep\n",child_sleep_count());
+						syslog(LOG_DEBUG, "overlord: %d children sleep\n",child_sleep_count());
 					}
 					children_print_states();
 					critical_unlock(SIGUSR1);
-					if(flag==flag_scan)
+					if(flag==flag_scan&&(!check_semaphore)){
 						pause();
+					} else {
+						check_semaphore=0;
+						sleep(1);
+					}
 				break;
 
 				case flag_sleep:
