@@ -131,6 +131,7 @@ void children_print_states(){
 int signal_children(int sig){
 	int i = 0;
 	while(i<children_count){
+		syslog(LOG_DEBUG, "signal: %d -> %d \n",sig,(children_pids+i)->pid);
 		kill((children_pids+i)->pid,sig);
 		i++;
 	}
@@ -152,11 +153,11 @@ void check_and_resurrect_children(){
 			}
 			(children_pids+i)->status=flag_sleep;
 			(children_pids+i)->pid=newpid;
-			//syslog(LOG_DEBUG, "ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
+			syslog(LOG_DEBUG, "ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
 			
 			int semval;
 			if (!sem_getvalue(semb+i, &semval)){
-				if(semval==1){
+				if(semval==0){
 			//		syslog(LOG_DEBUG, "BEFORE sem_post - ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
 					sem_post(semb+i);
 					sem_post(sema);

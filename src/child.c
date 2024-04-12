@@ -87,6 +87,8 @@ int subdaemon(int index){
 	}
 	pid=getpid();
 	ppid=getppid();
+	syslog(LOG_DEBUG, "child: parent pid is %d\n", ppid);
+	critical_unlock_child();
 	free((void*) children_pids);
 	/** In each new process, launch seeker driver function ...() */
 	while (1) {

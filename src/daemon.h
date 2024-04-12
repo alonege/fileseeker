@@ -32,8 +32,8 @@
 *
 */
 typedef volatile struct chld_info {
-	pid_t pid;
-	sig_atomic_t status;
+	volatile pid_t pid;
+	volatile sig_atomic_t status;
 } child_info, * volatile child_info_ptr;
 
 int print_usage(FILE* stream, int exit_code);
