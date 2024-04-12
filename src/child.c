@@ -85,6 +85,18 @@ int subdaemon(int index){
 	if (sigaction(SIGUSR2, &sa2, 0) == -1) {
 		return 121;
 	}
+	memset(&sa2, 0, sizeof(sa2));
+	sa2.sa_flags = SA_SIGINFO;
+	sa2.sa_handler = SIG_DFL;
+	if (sigaction(SIGTERM, &sa2, 0) == -1) {
+		return 121;
+	}
+	memset(&sa2, 0, sizeof(sa2));
+	sa2.sa_flags = SA_SIGINFO;
+	sa2.sa_handler = SIG_DFL;
+	if (sigaction(SIGCHLD, &sa2, 0) == -1) {
+		return 121;
+	}
 	pid=getpid();
 	ppid=getppid();
 	syslog(LOG_DEBUG, "child: parent pid is %d\n", ppid);

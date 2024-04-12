@@ -172,6 +172,16 @@ void check_and_resurrect_children(){
 	critical_unlock(SIGUSR1);
 }
 
+/** @brief function masks signals input BEFORE critical sections.
+ *
+ * @param sig signal to mask besides SIGTERM.
+ */
+void critical_lock_termstage(){
+	sigset_t sigmask;
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGCHLD);
+	sigprocmask(SIG_BLOCK, &sigmask, NULL);
+}
 
 /** @brief Fn handles signals - sets flag for overlord.
 *
@@ -199,11 +209,9 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 		break;
 
 		case SIGTERM:
-			signal_children(SIGTERM);
-			for(int i=optind;i<glargc;i++){
-				wait(NULL);
-			}
-			free((void*) children_pids);
+			critical_lock_termstage();
+			flag=flag_termination;
+
 		break;
 
 		case SIGCHLD:
@@ -226,13 +234,11 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 void critical_lock(int sig){
 	sigset_t sigmask;
 	sigemptyset(&sigmask);
-	//sigaddset(&sigmask, sig);
 	sigaddset(&sigmask, SIGUSR1);
-	//sigaddset(&sigmask, SIGUSR2);
-	//sigaddset(&sigmask, SIGTERM);
 	//sigaddset(&sigmask, SIGCHLD);
 	sigprocmask(SIG_BLOCK, &sigmask, NULL);
 }
+
 
 
 /** @brief function UNmasks signals input AFTER critical sections.
@@ -244,9 +250,7 @@ void critical_unlock(int sig){
 	sigemptyset(&sigmask);
 	//sigaddset(&sigmask, sig);
 	sigaddset(&sigmask, SIGUSR1);
-	//sigaddset(&sigmask, SIGUSR2);
 	//sigaddset(&sigmask, SIGTERM);
-	//sigaddset(&sigmask, SIGCHLD);
 	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
 }
 
@@ -445,6 +449,15 @@ int overlord(int argc, char**argv){
 
 						break;
 					}
+				break;
+				case flag_termination:
+					critical_lock_termstage();
+					signal_children(SIGTERM);
+					for(int i=optind;i<glargc;i++){
+						wait(NULL);
+					}
+					free((void*) children_pids);
+					return 0;
 				break;
 
 			}		

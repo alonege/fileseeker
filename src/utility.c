@@ -13,6 +13,7 @@ extern int sleep_time;
 */
 void options_handler(int argc, char** argv){
 	const char* const short_options = "ht:v";
+	verbose=0;
 
 	/* struct for console options.
 	*
@@ -37,7 +38,7 @@ void options_handler(int argc, char** argv){
 			break;
 
 			case 'v': /*-v or --verbose : logging*/
-				verbose=1;
+				verbose++;
 			break;
 
 			case 't':
