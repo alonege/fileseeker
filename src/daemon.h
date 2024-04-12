@@ -39,7 +39,7 @@ typedef volatile struct chld_info {
 int print_usage(FILE* stream, int exit_code);
 int overlord(int argc, char**argv);
 void options_handler(int argc, char** argv);
-int create_subdaemons(int argc);
+int create_subdaemons(int argc, char** argv);
 void critical_lock(int sig);
 void critical_unlock(int sig);
 int subdaemon(int index);
