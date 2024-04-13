@@ -22,54 +22,37 @@
 #include <unistd.h>
 
 /** @brief global verbose option.
- *
- * global verbose option; default 0 - logging disabled; 1 - logging enabled.
+ * global verbose option; default 0 - logging disabled; 1 - logging enabled; 2 - high level of logging; 3 - max level logging.
  * */
 int verbose;
 
-/** @brief global char* to program name.
- *
- * */
+/** @brief global char* to program name.*/
 const char* program_name;
 
-/** @brief globa sleep time between waking up
- *
- */
+/** @brief globa sleep time between waking up */
 int sleep_time = 60;
 
-/** @brief flag for SIGUSRs
- *
- */
+/** @brief flag for SIGUSRs (machine state changes with signals) */
 volatile sig_atomic_t flag = flag_start;
 
 /** @brief global pid for thread
- *
- * Global pid for thread - used in work, handling SIGUSRs etc
- */
+ * Global pid for thread - used in work, handling SIGUSRs etc */
 volatile pid_t pid;
 
 /** @brief global parent pid for thread
- *
- * Global pid for thread - used in work, handling SIGUSRs etc
- */
+ * Global pid for thread - used in work, handling SIGUSRs etc */
 volatile pid_t ppid=0;
 
-/** @brief table with pids to childrens.
- *
- *
- */
+/** @brief table with pids to childrens (pids (volatile pid_t) + status (volatile int) [alive=flag_sleeping/dead=flag_termination]). */
 child_info_ptr volatile children_pids=NULL;
 
-/** @brief count of forked childrens
- *
- *
- */
+/** @brief count of arguments (how much children we should have) */
 int children_count=0;
 
 /** @brief semaphore for synchronizing overlord and children work. It it n-counting semaphore (n=children_count) */
 sem_t *sema;
 
-/** @brief semaphore for retarting dead children with previous state - pointer to array of n binary semaphores (n=children_count) */
+/** @brief semaphore/s for retarting dead children with previous state - pointer to array of n binary semaphores (n=children_count) */
 sem_t *semb;
 
 /** semaphore change additional flag - indicator for semaphore change possibility */
@@ -79,9 +62,11 @@ volatile sig_atomic_t check_semaphore=0;
 int glargc;
 char** glargv;
 
-/** @brief Function checks if pid is child of overlord. if yes, ret child number; else ret 0.
+/** @brief Function checks if pid is child of overlord.
  *
+ * We're checking if given pid is in pid_t fragment of children_pids array.
  * @param checked_pid pid of process which we want check
+ * @return if it's child - return it's (i)ndex; if not, return -1.
  */
 volatile int is_child(pid_t checked_pid){
 	int i = 0;
@@ -94,8 +79,8 @@ volatile int is_child(pid_t checked_pid){
 }
 
 /** @brief Function checks semaphore value - which tells us about number of sleeping children.
- *
- */
+ * We're getting number of children not occupying semaphore while sleping. It's because semaphore is decremented while child is working.
+ * @return count of sleeping children; on error return -1.  */
 volatile int child_sleep_count(){
 	int semval;
 	if (!sem_getvalue(sema, &semval)){
@@ -104,8 +89,9 @@ volatile int child_sleep_count(){
 	else return -1;
 }
 
-/** @brief Function checks number of child with status status.
- *
+/** @brief Function sets given status in children_pids array for each child.
+ * 
+ * @param status - status which function will set for all children.
  */
 void children_status_set(int status){
 	int i = 0;
@@ -116,6 +102,8 @@ void children_status_set(int status){
 	}
 }
 
+/** @brief debug function for analysing alive children. 
+ * */
 void children_print_states(){
 	int i = 0;
 	while (i<children_count){
@@ -124,23 +112,38 @@ void children_print_states(){
 	}
 }
 
-//WARNING - untested!!!!
 /** @brief send signal sig to all forked children.
  *
+ * @param sig signal to send
+ * @return unused. always returns 0.
  */
 int signal_children(int sig){
 	int i = 0;
 	while(i<children_count){
-		syslog(LOG_DEBUG, "signal: %d -> %d \n",sig,(children_pids+i)->pid);
+		if (verbose > 2)
+			syslog(LOG_DEBUG, "signal: %d -> %d \n",sig,(children_pids+i)->pid);
 		kill((children_pids+i)->pid,sig);
 		i++;
 	}
 	return 0;
 }
 
+/** @brief function will check life of all children and ressurect dead ones.
+ *
+ * Function is making critical lock, after it's iterating through array 
+ * children_pids. if it finds dead children (status=flag_termination)
+ * it collects zombie kids. Then it tries to fork and subdaemonize new 
+ * child. if fork is unsuccesfull, it continues without change. otherwise, 
+ * it's setting alive status and saving pid of new children in the place 
+ * of old ones. then it checks for previous status of child (by it's 
+ * exclusive semaphore in semb array) and if it was working, fixes
+ * semaphores sema and semb+i, incrementing their values, altered in process
+ * of child being killed. Then, if child was working, it sends SIGUSR1 to it.
+ * then, it's analyzing next child (if there's any left)
+ */
 void check_and_resurrect_children(){
 	int i = 0;
-	critical_lock(SIGUSR1);
+	critical_lock();
 	while (i<children_count){
 		if((children_pids+i)->status==flag_termination){
 			int status=0;
@@ -158,10 +161,12 @@ void check_and_resurrect_children(){
 			int semval;
 			if (!sem_getvalue(semb+i, &semval)){
 				if(semval==0){
-			//		syslog(LOG_DEBUG, "BEFORE sem_post - ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
+					if (verbose>2)
+						syslog(LOG_DEBUG, "BEFORE sem_post - ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
 					sem_post(semb+i);
 					sem_post(sema);
-			//		syslog(LOG_DEBUG, "after sem_post - ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
+					if (verbose>2)
+						syslog(LOG_DEBUG, "after sem_post - ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
 					kill((children_pids+i)->pid,SIGUSR1);
 				}
 			}
@@ -169,12 +174,11 @@ void check_and_resurrect_children(){
 		}
 		i++;
 	}
-	critical_unlock(SIGUSR1);
+	critical_unlock();
 }
 
 /** @brief function masks signals input BEFORE critical sections.
  *
- * @param sig signal to mask besides SIGTERM.
  */
 void critical_lock_termstage(){
 	sigset_t sigmask;
@@ -185,26 +189,29 @@ void critical_lock_termstage(){
 
 /** @brief Fn handles signals - sets flag for overlord.
 *
+* @param sig signal we have received
+* @param si siginfo_t element containing info about signal
+* @param data unused, but required by sigaction() handler setting function
 */
 void handle_signals(int sig, siginfo_t* si, void* data) {
 
 	int volatile temp=0;
 	switch (sig) {
 		case SIGUSR1:
-			critical_lock(SIGUSR2);
+			critical_lock();
 			flag = flag_start;
 		break;
 		case SIGUSR2:
-			critical_lock(SIGUSR1);
+			critical_lock();
 			/** if SIGUSR2 wasn't send by child, we should handle it */
 			temp=is_child(si->si_pid);
 			if(temp>-1){
-				//set child to done
-				//(children_pids+temp)->status=flag_sleep;
+
 			} else {
 				/** not a child */
 				flag = flag_stop;
 			}
+			/** let's require semaphore check (for countin sleeping children) */
 			check_semaphore=1;
 		break;
 
@@ -215,11 +222,9 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 		break;
 
 		case SIGCHLD:
-			//critical_lock(SIGUSR1);
 			/** let's handle SIGCHLD. we set flag_termination for si_pid wchich sended SIGCHLD */
 			temp=is_child(si->si_pid);
 			(children_pids+temp)->status=flag_termination;
-			//check_and_resurrect_children();
 		break;
 
 		default:
@@ -227,30 +232,21 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 	}
 }
 
-/** @brief function masks signals input BEFORE critical sections.
- *
- * @param sig signal to mask besides SIGTERM.
- */
-void critical_lock(int sig){
+/** @brief function masks SIGUSR1 input BEFORE critical sections. */
+void critical_lock(){
 	sigset_t sigmask;
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, SIGUSR1);
-	//sigaddset(&sigmask, SIGCHLD);
 	sigprocmask(SIG_BLOCK, &sigmask, NULL);
 }
 
 
 
-/** @brief function UNmasks signals input AFTER critical sections.
- *
- * @param sig signal to UNmask besides SIGTERM.
- */
-void critical_unlock(int sig){
+/** @brief function UNmasks SIGUSR1 input AFTER critical sections. */
+void critical_unlock(){
 	sigset_t sigmask;
 	sigemptyset(&sigmask);
-	//sigaddset(&sigmask, sig);
 	sigaddset(&sigmask, SIGUSR1);
-	//sigaddset(&sigmask, SIGTERM);
 	sigprocmask(SIG_UNBLOCK, &sigmask, NULL);
 }
 
@@ -290,7 +286,7 @@ int main(int argc, char** argv){
 		perror("mmap");
 		exit(EXIT_FAILURE);
 	}
-	/* place semaphore in shared memory */
+	/* place semaphores in shared memory */
 	semb = mmap(NULL, sizeof(*semb)*children_count, PROT_READ |PROT_WRITE,MAP_SHARED|MAP_ANONYMOUS, -1, 0);
 	if (sema == MAP_FAILED) {
 		perror("mmap");
@@ -301,7 +297,7 @@ int main(int argc, char** argv){
 	        perror("sem_init");
 	        exit(EXIT_FAILURE);
 	}
-	/* create/initialize semaphores - one for each subdaemon */
+	/* create/initialize binary semaphores - one for each subdaemon */
 	int i = 0;
 	while (i<children_count){
 		if ( sem_init(semb+i, 1, 1) < 0) {
@@ -321,7 +317,6 @@ int main(int argc, char** argv){
 	}
 	struct sigaction sa2;
 	memset(&sa2, 0, sizeof(sa2));
-	//sa2.sa_flags = SA_SIGINFO|SA_NODEFER;
 	sa2.sa_flags = SA_SIGINFO;
 	sa2.sa_sigaction = handle_signals;
 	if (sigaction(SIGUSR2, &sa2, 0) == -1) {
@@ -332,7 +327,7 @@ int main(int argc, char** argv){
 	/** Deamonize program */
 	daemon(1, 0);
 
-	/** WARNING - EXPERIMENTAL - Transfer program control for overlord fun. */
+	/** Transfer program control for overlord function. */
 	overlord(argc, argv);
 
 	return 0;
@@ -346,12 +341,12 @@ int main(int argc, char** argv){
 * @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
 */
 int overlord(int argc, char**argv){
-	//WARNING - HIGHLY EXPERIMENTAL!!!!
-	//children_count = argc - optind;
+	/** children_count = argc - optind; */
 	
+	/** create our subdaemons */
 	create_subdaemons(argc, argv);
 
-	//let our children init themself
+	/** let our children init themself by sleeping a while */
 	sleep(1+children_count/5);
 	if(pid){//overlord process
 		pid = getpid();
@@ -373,15 +368,13 @@ int overlord(int argc, char**argv){
 			return 121;
 		}
 
-		critical_lock(SIGUSR2);
+		/** let's start our first scan! */
+		critical_lock();
 		flag = flag_start;
-		//raise(SIGUSR1);
 
 		while (1) {
-			//add life validation
 			switch (flag) {
 				case flag_start: /** case flag==1: send SIGUSR1 to child to start search */
-					//children_status_set(flag_scan);
 					if (verbose)
 						syslog(LOG_INFO, "overlord: woke up\n");
 					signal_children(SIGUSR1);
@@ -389,9 +382,9 @@ int overlord(int argc, char**argv){
 
 					if (verbose)
 						syslog(LOG_INFO, "overlord: went to sleep\n");
-					//sleep(1);
-					pause();
-					critical_unlock(SIGUSR2);
+					critical_unlock();//CHANGED IN CASE OF BUGS2
+					pause();//CHANGED IN CASE OF BUGS1
+
 				break;
 
 				case flag_stop: /** case flag==2: send SIGUSR2 to child to stop search */
@@ -399,30 +392,33 @@ int overlord(int argc, char**argv){
 						syslog(LOG_INFO, "overlord: GOT SIGUSR2\n");
 					children_status_set(flag_sleep);
 					signal_children(SIGUSR2);
-					//syslog(LOG_INFO, "overlord: got ACK SIGUSR2\n");
 					flag = flag_sleep;
-					critical_unlock(SIGUSR1);
+					critical_unlock();
 				break;
 
 				case flag_scan:
 					if (verbose)
 						syslog(LOG_INFO, "overlord: woke up\n");
-					//restart children if needed
 					/** if all children are in state of sleeping, it means all children have ended work. */
 					if(child_sleep_count()==children_count){
 						flag=flag_sleep;
-						syslog(LOG_DEBUG, "overlord: all children sleeps\n");
+						if (verbose > 2)
+							syslog(LOG_DEBUG, "overlord: all children sleeps\n");
 					} else {
-						syslog(LOG_DEBUG, "overlord: %d children sleep\n",child_sleep_count());
+						if (verbose > 2)
+							syslog(LOG_DEBUG, "overlord: %d children sleep\n",child_sleep_count());
 					}
-					children_print_states();
+					if (verbose > 2)
+						children_print_states();
 					check_and_resurrect_children();
-					critical_unlock(SIGUSR1);
+					critical_unlock();
 					if(flag==flag_scan&&(!check_semaphore)){
-						syslog(LOG_INFO, "overlord: went to sleep\n");
+						if (verbose)
+							syslog(LOG_INFO, "overlord: went to sleep\n");
 						pause();
-					} else {
-						//syslog(LOG_INFO, "overlord: went to short sleep during scan\n");
+					} else if (flag==flag_scan) {//CHANGED LINE IN CASE OF BUGS
+						if (verbose)
+							syslog(LOG_INFO, "overlord: went to sleep\n");
 						check_semaphore=0;
 						sleep(1);
 					}
@@ -431,14 +427,14 @@ int overlord(int argc, char**argv){
 				case flag_sleep:
 
 					//restart children if needed
-					critical_unlock(SIGUSR1);
+					critical_unlock();
 					if (verbose)
-						syslog(LOG_INFO, "overlord: went to sleep\n");
+						syslog(LOG_INFO, "overlord: went to sleep for %d seconds; job done\n", sleep_time);
 					sleep(sleep_time);
 					check_and_resurrect_children();
 					switch (flag) {
 						case flag_sleep:
-							critical_lock(SIGUSR1);
+							critical_lock();
 							flag=flag_start;
 						break;
 						case flag_start:

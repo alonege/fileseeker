@@ -40,8 +40,8 @@ int print_usage(FILE* stream, int exit_code);
 int overlord(int argc, char**argv);
 void options_handler(int argc, char** argv);
 int create_subdaemons(int argc, char** argv);
-void critical_lock(int sig);
-void critical_unlock(int sig);
+void critical_lock();
+void critical_unlock();
 int subdaemon(int index);
 
 #endif
