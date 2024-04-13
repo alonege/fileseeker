@@ -32,14 +32,14 @@
 *
 */
 typedef volatile struct chld_info {
-	pid_t pid;
-	sig_atomic_t status;
+	volatile pid_t pid;
+	volatile sig_atomic_t status;
 } child_info, * volatile child_info_ptr;
 
 int print_usage(FILE* stream, int exit_code);
 int overlord(int argc, char**argv);
 void options_handler(int argc, char** argv);
-int create_subdaemons(int argc);
+int create_subdaemons(int argc, char** argv);
 void critical_lock(int sig);
 void critical_unlock(int sig);
 int subdaemon(int index);

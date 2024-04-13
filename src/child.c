@@ -85,8 +85,22 @@ int subdaemon(int index){
 	if (sigaction(SIGUSR2, &sa2, 0) == -1) {
 		return 121;
 	}
+	memset(&sa2, 0, sizeof(sa2));
+	sa2.sa_flags = SA_SIGINFO;
+	sa2.sa_handler = SIG_DFL;
+	if (sigaction(SIGTERM, &sa2, 0) == -1) {
+		return 121;
+	}
+	memset(&sa2, 0, sizeof(sa2));
+	sa2.sa_flags = SA_SIGINFO;
+	sa2.sa_handler = SIG_DFL;
+	if (sigaction(SIGCHLD, &sa2, 0) == -1) {
+		return 121;
+	}
 	pid=getpid();
 	ppid=getppid();
+	syslog(LOG_DEBUG, "child: parent pid is %d\n", ppid);
+	critical_unlock_child();
 	free((void*) children_pids);
 	/** In each new process, launch seeker driver function ...() */
 	while (1) {
@@ -94,6 +108,7 @@ int subdaemon(int index){
 			case flag_start:
 				flag=flag_scan;
 				sem_wait(sema);
+				sem_wait(semb+index);
 				if(verbose)
 					syslog(LOG_DEBUG, "child: GOT SIGUSR1\n");
 				if(verbose)
@@ -102,7 +117,7 @@ int subdaemon(int index){
 				critical_unlock_child();
 				//work to do - fn call with while flag==flag_scan loop/recursive checking
 				//
-				sleep(60);
+				sleep(8);
 				//TEMPORARY SLEEP FOR SIGNAL DEBUG
 				switch (flag) {
 					case flag_scan:
@@ -123,10 +138,12 @@ int subdaemon(int index){
 					break;
 
 					default:
-						sem_post(sema);
+						//sem_post(sema);
+						//sem_post(semb+index);
 						abort();
 					break;
 				}
+				sem_post(semb+index);
 				sem_post(sema);
 			break;
 
