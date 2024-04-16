@@ -148,6 +148,7 @@ void check_and_resurrect_children(){
 	int i = 0;
 	critical_lock();
 	while (i<children_count){
+		syslog(LOG_DEBUG, "CHILD check\n");
 		if((children_pids+i)->alive==child_dead){
 			int status=0;
 			syslog(LOG_DEBUG, "CHILD DEAD \n");
@@ -191,11 +192,6 @@ void critical_lock_termstage(){
 void handle_signals(int sig, siginfo_t* si, void* data) {
 
 	int temp=0;
-	if (sig==(SIGRTMIN)){
-		temp=is_child(si->si_pid);
-		(children_pids+temp)->status=flag_sleep;
-		return;
-	}
 	switch (sig) {
 		case SIGUSR1:
 			critical_lock();
@@ -218,13 +214,19 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 		case SIGCHLD:
 			/** let's handle SIGCHLD. we set flag_termination for si_pid wchich sended SIGCHLD */
 			temp=is_child(si->si_pid);
-			(children_pids+temp)->status=child_dead;
+			(children_pids+temp)->alive=child_dead;
 		break;
 
 
 		default:
 		break;
 	}
+}
+
+void handle_rt(int sig, siginfo_t* si, void* data){
+	int temp=is_child(si->si_pid);
+	(children_pids+temp)->status=flag_sleep;
+	return;
 }
 
 /** @brief function masks SIGUSR1 input BEFORE critical sections. */
@@ -342,7 +344,7 @@ int overlord(int argc, char**argv){
 		}
 		memset(&sa2, 0, sizeof(sa2));
 		sa2.sa_flags = SA_SIGINFO;
-		sa2.sa_sigaction = handle_signals;
+		sa2.sa_sigaction = handle_rt;
 		if (sigaction(SIGRTMIN, &sa2, 0) == -1) {
 			free((void*)children_pids);
 			return 121;
@@ -386,18 +388,22 @@ int overlord(int argc, char**argv){
 						flag=flag_sleep;
 						if (verbose > 2)
 							syslog(LOG_DEBUG, "overlord: all children sleeps\n");
-					} else {
+					} else if (flag==flag_scan) {
 						if (verbose > 2)
 							syslog(LOG_DEBUG, "overlord: %d children sleep\n",child_sleep_count());
+						if (verbose)
+							syslog(LOG_INFO, "overlord: went to sleep\n");
 						pause();
+
 					}
-					if (verbose)
-						syslog(LOG_INFO, "overlord: went to sleep\n");
+
+
 				break;
 
 				case flag_sleep:
 
 					//restart children if needed
+					check_and_resurrect_children();
 					critical_unlock();
 					if (verbose)
 						syslog(LOG_INFO, "overlord: went to sleep for %d seconds; job done\n", sleep_time);

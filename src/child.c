@@ -137,6 +137,10 @@ int subdaemon(int index){
 						restarted_scan=1;
 					break;
 
+					case flag_stop:
+
+					break;
+
 					default:
 						abort();
 					break;
@@ -145,13 +149,13 @@ int subdaemon(int index){
 			break;
 
 			case flag_stop:
+				if(!got_sigusr2)
+					send_ack_parent(SIGRTMIN);
 				if(verbose&&got_sigusr2){
 					syslog(LOG_INFO, "child: GOT SIGUSR2\n");
 					got_sigusr2=0;
 				}
-				//stop action
-				//syslog(LOG_DEBUG, "CHILD: flag_stop case\n");
-				send_ack_parent(SIGRTMIN);
+
 				//syslog(LOG_DEBUG, "CHILD: sended SIGUSR2 to ppid %d\n", ppid);
 				flag = flag_sleep;
 				//syslog(LOG_DEBUG, "CHILD: unlocked\n");
