@@ -27,6 +27,10 @@
 #define flag_stop 3
 #define flag_termination 4
 
+/** alive states */
+#define child_alive 1
+#define child_dead 0
+
 /** @brief struct for holding data about childrens - pids and their status.
 *
 *
@@ -34,6 +38,7 @@
 typedef volatile struct chld_info {
 	volatile pid_t pid;
 	volatile sig_atomic_t status;
+	volatile sig_atomic_t alive;
 } child_info, * volatile child_info_ptr;
 
 int print_usage(FILE* stream, int exit_code);

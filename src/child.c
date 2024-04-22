@@ -3,6 +3,8 @@
 #include <signal.h>
 #include <stdlib.h>
 
+int restarted_scan=0;
+
 /** @brief function masks signals input BEFORE critical sections.
  *
  * @param sig signal to mask besides SIGTERM.
@@ -107,13 +109,15 @@ int subdaemon(int index){
 		switch (flag) {
 			case flag_start:
 				flag=flag_scan;
-				sem_wait(sema);
-				sem_wait(semb+index);
-				if(verbose)
+				if(verbose&&!restarted_scan)
 					syslog(LOG_DEBUG, "child: GOT SIGUSR1\n");
+				else 
+					restarted_scan=0;
 				if(verbose)
 					syslog(LOG_DEBUG, "child: woke up\n");
-				//syslog(LOG_DEBUG, "CHILD: unlocked\n");
+			break;
+
+			case flag_scan:
 				critical_unlock_child();
 				//work to do - fn call with while flag==flag_scan loop/recursive checking
 				//
@@ -123,38 +127,35 @@ int subdaemon(int index){
 					case flag_scan:
 						//scan ended by itself
 						//syslog(LOG_DEBUG, "succesfully ended search\n");
-						flag=flag_stop;//let's inform overlord
-					break;
 
-					case flag_stop:
-						if(verbose)
-							syslog(LOG_INFO, "child: GOT SIGUSR2\n");
-						flag=flag_sleep;
+						flag=flag_stop;//let's inform overlord
 					break;
 
 					case flag_start:
 						if(verbose)
 							syslog(LOG_DEBUG, "child: GOT SIGUSR1 during search, restarting it\n");
+						restarted_scan=1;
+					break;
+
+					case flag_stop:
+
 					break;
 
 					default:
-						//sem_post(sema);
-						//sem_post(semb+index);
 						abort();
 					break;
 				}
-				sem_post(semb+index);
-				sem_post(sema);
+
 			break;
 
 			case flag_stop:
+				if(!got_sigusr2)
+					send_ack_parent(SIGRTMIN);
 				if(verbose&&got_sigusr2){
 					syslog(LOG_INFO, "child: GOT SIGUSR2\n");
 					got_sigusr2=0;
 				}
-				//stop action
-				//syslog(LOG_DEBUG, "CHILD: flag_stop case\n");
-				send_ack_parent(SIGUSR2);
+
 				//syslog(LOG_DEBUG, "CHILD: sended SIGUSR2 to ppid %d\n", ppid);
 				flag = flag_sleep;
 				//syslog(LOG_DEBUG, "CHILD: unlocked\n");
@@ -164,7 +165,7 @@ int subdaemon(int index){
 
 			case flag_sleep:
 				if(verbose)
-					syslog(LOG_DEBUG, "child: went to sleep\n");
+					syslog(LOG_INFO, "child: went to sleep\n");
 				pause();
 			break;
 
