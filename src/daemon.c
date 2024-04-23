@@ -148,10 +148,10 @@ void check_and_resurrect_children(){
 	int i = 0;
 	critical_lock();
 	while (i<children_count){
-		syslog(LOG_DEBUG, "CHILD check\n");
 		if((children_pids+i)->alive==child_dead){
 			int status=0;
-			syslog(LOG_DEBUG, "overlord: CHILD DEAD \n");
+			if(verbose>2)
+				syslog(LOG_DEBUG, "overlord: CHILD DEAD \n");
 			waitpid((children_pids+i)->pid, &status, WNOHANG);
 			pid_t newpid=fork();
 			if(newpid==-1)
@@ -161,7 +161,8 @@ void check_and_resurrect_children(){
 			}
 			(children_pids+i)->alive=child_alive;
 			(children_pids+i)->pid=newpid;
-			syslog(LOG_DEBUG, "overlord: ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
+			if(verbose>2)
+				syslog(LOG_DEBUG, "overlord: ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
 			
 			if ((children_pids+i)->status==flag_scan){
 				kill((children_pids+i)->pid,SIGUSR1);
@@ -451,7 +452,8 @@ int create_subdaemons(int argc, char** argv){
 			subdaemon(i);
 		}
 		(children_pids+i)->pid=pid;
-		syslog(LOG_DEBUG, "overlord: created child with pid %d\n", (children_pids+i)->pid);
+		if(verbose>2)
+			syslog(LOG_DEBUG, "overlord: created child with pid %d\n", (children_pids+i)->pid);
 		(children_pids+i)->status=flag_sleep;
 		(children_pids+i)->alive=child_alive;
 	}
