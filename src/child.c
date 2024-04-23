@@ -121,7 +121,8 @@ int subdaemon(int index){
 				critical_unlock_child();
 				//work to do - fn call with while flag==flag_scan loop/recursive checking
 				//
-				sleep(8);
+				//sleep(8);
+
 				//TEMPORARY SLEEP FOR SIGNAL DEBUG
 				switch (flag) {
 					case flag_scan:

@@ -151,7 +151,7 @@ void check_and_resurrect_children(){
 		syslog(LOG_DEBUG, "CHILD check\n");
 		if((children_pids+i)->alive==child_dead){
 			int status=0;
-			syslog(LOG_DEBUG, "CHILD DEAD \n");
+			syslog(LOG_DEBUG, "overlord: CHILD DEAD \n");
 			waitpid((children_pids+i)->pid, &status, WNOHANG);
 			pid_t newpid=fork();
 			if(newpid==-1)
@@ -161,7 +161,7 @@ void check_and_resurrect_children(){
 			}
 			(children_pids+i)->alive=child_alive;
 			(children_pids+i)->pid=newpid;
-			syslog(LOG_DEBUG, "ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
+			syslog(LOG_DEBUG, "overlord: ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
 			
 			if ((children_pids+i)->status==flag_scan){
 				kill((children_pids+i)->pid,SIGUSR1);
@@ -269,6 +269,9 @@ int main(int argc, char** argv){
 	/* Check for no args */
 	if(argc<2)
 		return print_usage(stdout, 1);
+
+	glargc=argc;
+	glargv=argv;
 
 	/** Function call options_handler to handle options and set optind for overlord. */
 	options_handler(argc, argv);
