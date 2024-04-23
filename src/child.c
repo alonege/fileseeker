@@ -1,4 +1,5 @@
 #include "fileseeker.h"
+#include "recsearch.h"
 #include <semaphore.h>
 #include <signal.h>
 #include <stdlib.h>
@@ -101,7 +102,8 @@ int subdaemon(int index){
 	}
 	pid=getpid();
 	ppid=getppid();
-	syslog(LOG_DEBUG, "child: parent pid is %d\n", ppid);
+	if(verbose>2)
+		syslog(LOG_DEBUG, "child: parent pid is %d\n", ppid);
 	critical_unlock_child();
 	free((void*) children_pids);
 	/** In each new process, launch seeker driver function ...() */
@@ -121,7 +123,9 @@ int subdaemon(int index){
 				critical_unlock_child();
 				//work to do - fn call with while flag==flag_scan loop/recursive checking
 				//
-				sleep(8);
+				//sleep(8);
+				search_wrapper(index);
+
 				//TEMPORARY SLEEP FOR SIGNAL DEBUG
 				switch (flag) {
 					case flag_scan:
