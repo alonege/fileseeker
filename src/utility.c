@@ -4,9 +4,9 @@ extern int verbose;
 extern int sleep_time;
 
 
-/** @brief Fn takes format(s) for files we'll search with regex.
+/** @brief Fn takes arguments to analyse.
 *
-* Function takes table of char* to arguments wchich are formats for usage in regex.
+* Function takes table of char* to arguments wchich will be searched.
 * At the beginning, it opens syslog and validates input.
 * @param argc number of args; always at least 1 (for index 0 - program name).
 * @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
@@ -66,7 +66,6 @@ void options_handler(int argc, char** argv){
 	printf("count of patterns: %d\n", argc - i);
 	while(i<argc){
 		printf("Argument: %s\n", *(argv+i));
-		//TODO regex for each arg? or send it later to childrens?
 		++i;
 	}
 
