@@ -35,12 +35,11 @@ void critical_unlock_child(){
 
 /** @brief send SIGCHLD signal (aka ACK) to parent process
  *
- *
+ * @return 0 on success; 1 on error.
  */
 int send_ack_parent(int sig){
 	if(ppid>0){
 		kill(ppid, sig);
-		//syslog(LOG_INFO, "child: ACKed\n");
 		return 0;
 	} else {
 		return 1;
@@ -50,17 +49,20 @@ int send_ack_parent(int sig){
 /** @brief variable tells us if we ended from sigusr2 (1) or not (0) */
 volatile sig_atomic_t got_sigusr2 = 0;
 
-/** @brief Fn handles signals - sets flag for children.
+/** @brief Fn handles signals - sets flag for child.
 *
+* @param sig signal we have received
+* @param si siginfo_t element containing info about signal
+* @param data unused, but required by sigaction() handler setting function
 */
 void handle_signals_child(int sig, siginfo_t* si, void* data) {
 	if(si->si_pid==ppid){
 		switch (sig) {
-			case SIGUSR1:
+			case SIGUSR1:/** case signal SIGUSR1 from overlord - set state to scan. */
 				critical_lock_child();
 				flag = flag_start;
 			break;
-			case SIGUSR2:
+			case SIGUSR2:/** case signal SIGUSR2 from overlord - set state to stop; indicate we got SIGUSR2. */
 				critical_lock_child();
 				flag = flag_stop;
 				got_sigusr2 = 1;
@@ -72,8 +74,14 @@ void handle_signals_child(int sig, siginfo_t* si, void* data) {
 	}
 }
 
+/** @brief subdaemon is main driver for child. It's state machine.
+ *
+ * @param index number of child (and number of pattern to use for child)
+ */
 int subdaemon(int index){
+	/** set startup state to sleep. */
 	flag=flag_sleep;
+	/** and set signals handlers. */
 	struct sigaction sa1;
 	memset(&sa1, 0, sizeof(sa1));
 	sa1.sa_flags = SA_SIGINFO;
@@ -106,10 +114,10 @@ int subdaemon(int index){
 		syslog(LOG_DEBUG, "child: parent pid is %d\n", ppid);
 	critical_unlock_child();
 	free((void*) children_pids);
-	/** In each new process, launch seeker driver function ...() */
+	/** let's launch seeker driver switch... */
 	while (1) {
 		switch (flag) {
-			case flag_start:
+			case flag_start:/** we got SIGUSR1 from overlord, which set flag to flag_scan */
 				flag=flag_scan;
 				if(verbose&&!restarted_scan)
 					syslog(LOG_DEBUG, "child: GOT SIGUSR1\n");
@@ -119,23 +127,19 @@ int subdaemon(int index){
 					syslog(LOG_DEBUG, "child: woke up\n");
 			break;
 
-			case flag_scan:
+			case flag_scan:/** we entered into scan from flag_scan or restart during previous scan. Let's unlock signals and work. */
 				critical_unlock_child();
-				//work to do - fn call with while flag==flag_scan loop/recursive checking
-				//
-				//sleep(8);
+				/** fn call with while flag==flag_scan loop/recursive checking */
 				search_wrapper(index);
 
-				//TEMPORARY SLEEP FOR SIGNAL DEBUG
+				/** we have another internal state submachine */
 				switch (flag) {
-					case flag_scan:
-						//scan ended by itself
-						//syslog(LOG_DEBUG, "succesfully ended search\n");
-
-						flag=flag_stop;//let's inform overlord
+					case flag_scan:/** if flag is flag_scan - scan ended by itself - let's inform overlord */
+						flag=flag_stop;
 					break;
 
-					case flag_start:
+					case flag_start:/** if flag is flag_start - during scan we got SIGUSR1 and we need to restart it */
+
 						if(verbose)
 							syslog(LOG_DEBUG, "child: GOT SIGUSR1 during search, restarting it\n");
 						restarted_scan=1;
@@ -147,27 +151,24 @@ int subdaemon(int index){
 
 					default:
 						abort();
-					break;
+					break;/** end of state submachine */
 				}
-
 			break;
 
-			case flag_stop:
-				if(!got_sigusr2)
+			case flag_stop: /** if flag_stop, we've received SIGUSR2 OR scan ended normally. */
+				if(!got_sigusr2)/** ended by itself */
 					send_ack_parent(SIGRTMIN);
-				if(verbose&&got_sigusr2){
+				if(verbose&&got_sigusr2){/** external end with SIGUSR2 */
 					syslog(LOG_INFO, "child: GOT SIGUSR2\n");
 					got_sigusr2=0;
 				}
 
-				//syslog(LOG_DEBUG, "CHILD: sended SIGUSR2 to ppid %d\n", ppid);
 				flag = flag_sleep;
-				//syslog(LOG_DEBUG, "CHILD: unlocked\n");
 				critical_unlock_child();
 			break;
 
 
-			case flag_sleep:
+			case flag_sleep: /** if flag is flag_sleep - we should pasue and wait for input from overlord. */
 				if(verbose)
 					syslog(LOG_INFO, "child: went to sleep\n");
 				pause();
@@ -179,7 +180,6 @@ int subdaemon(int index){
 			break;
 		}
 	}
-	//printf("[son] pid %d from [parent] pid %d\n",getpid(),getppid());
 	exit(0);
 
 }

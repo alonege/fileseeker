@@ -49,24 +49,16 @@ child_info_ptr volatile children_pids=NULL;
 /** @brief count of arguments (how much children we should have) */
 int children_count=0;
 
-/** @brief semaphore for synchronizing overlord and children work. It it n-counting semaphore (n=children_count) */
-sem_t *sema;
-
-/** @brief semaphore/s for retarting dead children with previous state - pointer to array of n binary semaphores (n=children_count) */
-sem_t *semb;
-
-/** semaphore change additional flag - indicator for semaphore change possibility */
-volatile sig_atomic_t check_semaphore=0;
-
-/** global argc argv */
+/** global argc */
 int glargc;
+/** global argv */
 char** glargv;
 
 /** @brief Function checks if pid is child of overlord.
  *
  * We're checking if given pid is in pid_t fragment of children_pids array.
  * @param checked_pid pid of process which we want check
- * @return if it's child - return it's (i)ndex; if not, return -1.
+ * @return if it's child - return it's (i)ndex in children_pids array; if not, return -1.
  */
 volatile int is_child(pid_t checked_pid){
 	int i = 0;
@@ -78,8 +70,8 @@ volatile int is_child(pid_t checked_pid){
 	return -1;
 }
 
-/** @brief Function checks semaphore value - which tells us about number of sleeping children.
- * We're getting number of children not occupying semaphore while sleping. It's because semaphore is decremented while child is working.
+/** @brief Function checks count of flag_sleep statuses in status field of children pids array - which tells us about 
+ * number of sleeping children.
  * @return count of sleeping children; on error return -1.  */
 volatile int child_sleep_count(){
 	int tmp = 0;
@@ -138,11 +130,9 @@ int signal_children(int sig){
  * it collects zombie kids. Then it tries to fork and subdaemonize new 
  * child. if fork is unsuccesfull, it continues without change. otherwise, 
  * it's setting alive status and saving pid of new children in the place 
- * of old ones. then it checks for previous status of child (by it's 
- * exclusive semaphore in semb array) and if it was working, fixes
- * semaphores sema and semb+i, incrementing their values, altered in process
- * of child being killed. Then, if child was working, it sends SIGUSR1 to it.
- * then, it's analyzing next child (if there's any left)
+ * of old ones. then it checks for previous status of child (by status 
+ * in status field of children_pids) and if it was working, it sends SIGUSR1
+ * to it. then, it's analyzing next child (if there's any left)
  */
 void check_and_resurrect_children(){
 	int i = 0;
@@ -174,7 +164,7 @@ void check_and_resurrect_children(){
 	critical_unlock();
 }
 
-/** @brief function masks signals input BEFORE critical sections.
+/** @brief function masks signal SIGCHLD input BEFORE exit.
  *
  */
 void critical_lock_termstage(){
@@ -202,8 +192,6 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 			critical_lock();
 			/** if SIGUSR2 wasn't send by child, we should handle it */
 			flag = flag_stop;
-			/** let's require semaphore check (for countin sleeping children) */
-			check_semaphore=1;
 		break;
 
 		case SIGTERM:
@@ -230,7 +218,7 @@ void handle_rt(int sig, siginfo_t* si, void* data){
 	return;
 }
 
-/** @brief function masks SIGUSR1 input BEFORE critical sections. */
+/** @brief function masks SIGUSR1, SIGUSR2, SIGRTMIN (real - time signals from children) input BEFORE critical sections. */
 void critical_lock(){
 	sigset_t sigmask;
 	sigemptyset(&sigmask);
@@ -242,7 +230,7 @@ void critical_lock(){
 
 
 
-/** @brief function UNmasks SIGUSR1 input AFTER critical sections. */
+/** @brief function UNmasks SIGUSR1, SIGUSR2, SIGRTMIN (real - time signals from children) input AFTER critical sections. */
 void critical_unlock(){
 	sigset_t sigmask;
 	sigemptyset(&sigmask);
@@ -255,7 +243,7 @@ void critical_unlock(){
 
 /** @brief Fn is main driver for other functionalities.
 *
-* Function takes table of char* to arguments wchich are formats for usage in regex.
+* Function takes table of char* to arguments wchich are formats for usage subdaemons.
 * @param argc number of args; always at least 1 (for index 0 - program name).
 * @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
 */
@@ -267,10 +255,11 @@ int main(int argc, char** argv){
 	/** Open syslog. */
 	openlog(program_name, LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL0);
 
-	/* Check for no args */
+	/* Check for no args. */
 	if(argc<2)
 		return print_usage(stdout, 1);
 
+	/** let's set global addresses of argc argv. */
 	glargc=argc;
 	glargv=argv;
 
@@ -360,53 +349,59 @@ int overlord(int argc, char**argv){
 
 		while (1) {
 			switch (flag) {
-				case flag_start: /** case flag==1: send SIGUSR1 to child to start search */
+				case flag_start: /** case flag==flag_start: send SIGUSR1 to child to start search */
 					if (verbose)
 						syslog(LOG_INFO, "overlord: GOT SIGUSR1\n");
+					/** send start signal to children. */
 					signal_children(SIGUSR1);
+					/** set overlord flag to switch state to flag_scan. */
 					flag = flag_scan;
+					/** set children states to flag_scan. */
 					children_status_set(flag_scan);
 
 				break;
 
-				case flag_stop: /** case flag==2: send SIGUSR2 to child to stop search */
+				case flag_stop: /** case flag==flag_stop: send SIGUSR2 to child to stop search */
 					if (verbose)
 						syslog(LOG_INFO, "overlord: GOT SIGUSR2\n");
+					/** set children states to sleep. */
 					children_status_set(flag_sleep);
+					/** and let them know about their status in our state registry.. */
 					signal_children(SIGUSR2);
+					/** set our flag to sleep.. */
 					flag = flag_sleep;
+					/** unlock sigs.. */
 					critical_unlock();
 				break;
 
-				case flag_scan:
+				case flag_scan: /** case flag==flag_scan */
 					if (verbose)
 						syslog(LOG_INFO, "overlord: woke up\n");
-					/** if all children are in state of sleeping, it means all children have ended work. */
+					/** unlock signals */
 					critical_unlock();
 					if (verbose > 2)
 						children_print_states();
+					/** ressurect children if needed. */
 					check_and_resurrect_children();
 					if (verbose > 2)
 						children_print_states();
 					if(child_sleep_count()==children_count){
+						/** if all children are in state of sleeping, it means all children have ended work. */
 						flag=flag_sleep;
 						if (verbose > 2)
 							syslog(LOG_DEBUG, "overlord: all children sleeps\n");
 					} else if (flag==flag_scan) {
+						/** if not all children are in state of sleeping, it means there are working childrens. */
 						if (verbose > 2)
 							syslog(LOG_DEBUG, "overlord: %d children sleep\n",child_sleep_count());
 						if (verbose)
 							syslog(LOG_INFO, "overlord: went to sleep\n");
 						pause();
-
 					}
-
-
 				break;
 
-				case flag_sleep:
-
-					//restart children if needed
+				case flag_sleep:/** case flag_sleep */
+					/**restart children if needed*/
 					check_and_resurrect_children();
 					critical_unlock();
 					if (verbose)
@@ -414,7 +409,7 @@ int overlord(int argc, char**argv){
 					sleep(sleep_time);
 					check_and_resurrect_children();
 					switch (flag) {
-						case flag_sleep:
+						case flag_sleep: /** if we were sleeping for sleep_time without state change, let's start scan */
 							critical_lock();
 							signal_children(SIGUSR1);
 							flag = flag_scan;
@@ -425,12 +420,15 @@ int overlord(int argc, char**argv){
 						break;
 					}
 				break;
-				case flag_termination:
+				case flag_termination:/** case flag_termination - got SIGTERM; lock SIGCHLD reset handler */
 					critical_lock_termstage();
+					/**send SIGTERM to children*/
 					signal_children(SIGTERM);
+					/** collect zombie childrens */
 					for(int i=optind;i<glargc;i++){
 						wait(NULL);
 					}
+					/** deallocate children_pids */
 					free((void*) children_pids);
 					return 0;
 				break;
@@ -451,9 +449,11 @@ int create_subdaemons(int argc, char** argv){
 		if(pid == 0){
 			subdaemon(i);
 		}
+		/** and let's save child pid in children_pids pid field. */
 		(children_pids+i)->pid=pid;
 		if(verbose>2)
 			syslog(LOG_DEBUG, "overlord: created child with pid %d\n", (children_pids+i)->pid);
+		/** and let's also save startup child status and alive status in children_pids status and alive field. */
 		(children_pids+i)->status=flag_sleep;
 		(children_pids+i)->alive=child_alive;
 	}
