@@ -1,4 +1,4 @@
-/** @file daemon.c
+/** @file child.c
  *  @brief Main children process driver.
  *
  * Child after gaining control initalizes itself, setting up sigaction signals handlers. Then it's entering state machine in sleeping status. When it gets SIGUSR1 (so flag=flag_start), then it changes state from flag_start to flag_scanning and calls wrapper function for search (using index argument). After search end/interrupt child checks for the cause and makes appropiate steps. If we got stop signal from overlord, it pauses. If it ended scan by itself, it's sending SIGRTMIN to overlord. If it got start signal, it restarts scan, etc... 

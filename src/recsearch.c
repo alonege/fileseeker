@@ -1,4 +1,4 @@
-/** @file daemon.c
+/** @file recsearch.c
  *  @brief Recursive search driver.
  *
  * Wrapper function gets offset and sets pointer to searched substring. Then it's calling root function, which calls normal recursive function. Inside them, program checks for access and opens dir (if dir and has access). Then it uses strstr to check if searched word is in file/dir name. If yes, it will log it.

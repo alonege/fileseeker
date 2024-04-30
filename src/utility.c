@@ -1,4 +1,4 @@
-/** @file daemon.c
+/** @file utility.c
  *  @brief Utility for options scrapping.
  *
  *  @author Jakub Murawski; Michał Woźniak, Szymon Żelechowski, Kacper Hącia
