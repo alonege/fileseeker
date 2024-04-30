@@ -1,3 +1,9 @@
+/** @file daemon.c
+ *  @brief Utility for options scrapping.
+ *
+ *  @author Jakub Murawski; Michał Woźniak, Szymon Żelechowski, Kacper Hącia
+ */
+
 #include "fileseeker.h"
 
 extern int verbose;
@@ -61,13 +67,13 @@ void options_handler(int argc, char** argv){
 	/** option scan is continued untill we're out of options. */
 	} while(next_option!=-1);
 
-	/** we handle other arguments (file name patterns). For each pattern, we do [WARNING - DOCUMENT IT LATER] */
+	/** we handle other arguments (file name patterns). */
 	int i = optind;
-	printf("count of patterns: %d\n", argc - i);
-	while(i<argc){
-		printf("Argument: %s\n", *(argv+i));
-		++i;
-	}
+	//printf("count of patterns: %d\n", argc - i);
+	//while(i<argc){
+	//	printf("Argument: %s\n", *(argv+i));
+	//	++i;
+	//}
 
 }
 
@@ -81,7 +87,7 @@ int print_usage(FILE* stream, int exit_code){
 	fprintf(stream,
 		"  -h   --help             Shows this help and exits.\n"
 		"  -t n --time n           Sets Daemon sleep time for n seconds.\n"
-		"  -v   --verbose          Enables verbose logging.\n"
+		"  -v   --verbose          Enables verbose logging (-vv or -vvv for debug logging).\n"
 		);
 	return exit_code;
 }

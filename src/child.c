@@ -1,3 +1,12 @@
+/** @file daemon.c
+ *  @brief Main children process driver.
+ *
+ * Child after gaining control initalizes itself, setting up sigaction signals handlers. Then it's entering state machine in sleeping status. When it gets SIGUSR1 (so flag=flag_start), then it changes state from flag_start to flag_scanning and calls wrapper function for search (using index argument). After search end/interrupt child checks for the cause and makes appropiate steps. If we got stop signal from overlord, it pauses. If it ended scan by itself, it's sending SIGRTMIN to overlord. If it got start signal, it restarts scan, etc... 
+ *  @author Kacper Hącia; Jakub Murawski
+ */
+
+////////////////Abandon some of hope, ye who enter here.
+
 #include "fileseeker.h"
 #include "recsearch.h"
 #include <semaphore.h>
@@ -8,7 +17,6 @@ int restarted_scan=0;
 
 /** @brief function masks signals input BEFORE critical sections.
  *
- * @param sig signal to mask besides SIGTERM.
  */
 void critical_lock_child(){
 	sigset_t sigmask;
@@ -22,7 +30,6 @@ void critical_lock_child(){
 
 /** @brief function UNmasks signals input AFTER critical sections.
  *
- * @param sig signal to UNmask besides SIGTERM.
  */
 void critical_unlock_child(){
 	sigset_t sigmask;
@@ -74,7 +81,7 @@ void handle_signals_child(int sig, siginfo_t* si, void* data) {
 	}
 }
 
-/** @brief subdaemon is main driver for child. It's state machine.
+/** @brief subdaemon is main driver for child. It's state machine. It's checking flag status after waking up and working on this basis.
  *
  * @param index number of child (and number of pattern to use for child)
  */
