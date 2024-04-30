@@ -1,3 +1,10 @@
+/** @file daemon.c
+ *  @brief Recursive search driver.
+ *
+ * Wrapper function gets offset and sets pointer to searched substring. Then it's calling root function, which calls normal recursive function. Inside them, program checks for access and opens dir (if dir and has access). Then it uses strstr to check if searched word is in file/dir name. If yes, it will log it.
+ *  @author Michał Woźniak, Szymon Żelechowski;
+ */
+
 #include "fileseeker.h"
 
 /** @brief recursive function for finding word in file names in given dir.
@@ -103,7 +110,8 @@ void search_rec_root(char* word_to_find, char *root_path) {
 }
 
 /** @brief function wraps search function for easy call.
-*
+ *
+* Function calls root version first, which calls normal search_rec, which calls search_rec, etc...
 * @param offset is offset in children_pids array - index (number) of child.
 */
 void search_wrapper(int offset){

@@ -1,7 +1,8 @@
 /** @file daemon.c
  *  @brief Main daemon driver.
  *
- *  @author Kacper Hącia (aloneg)
+ * daemon.c is main process (overlord) driver. It has array with information about children - children_pids, containing their pid, status (state machine) and alive status (0/1). Process gathers info from arguments and options - it calls getopt.c function to deal with them. Then process becomes daemon. It creates children, giving them index number (their internal id, aka offset in array); children start own driver, child.c. Overlord, after creating children, initalizes itself (sets sigaction signal handlers etc.) and raises SIGUSR1 - first scan. Then it's in infinite loop driver. Overlord is relay for SIGUSR1, SIGUSR2 and SIGTERM. If overlord gets SIGCHLD, it gets it and set child dead status in array. In particular moments, children get ressurected. Overlord waits for children scan end, signalised with SIGRTMIN from them. Then, it goes to sleep for sleep_time seconds. It wakes up, and starts scan again and again...
+ *  @author Kacper Hącia
  */
 
 ////////////////Abandon all hope, ye who enter here.
@@ -39,8 +40,7 @@ volatile sig_atomic_t flag = flag_start;
  * Global pid for thread - used in work, handling SIGUSRs etc */
 volatile pid_t pid;
 
-/** @brief global parent pid for thread
- * Global pid for thread - used in work, handling SIGUSRs etc */
+/** @brief global parent pid for thread - used in work, handling SIGUSRs etc */
 volatile pid_t ppid=0;
 
 /** @brief table with pids to childrens (pids (volatile pid_t) + status (volatile int) [alive=flag_sleeping/dead=flag_termination]). */
@@ -49,9 +49,9 @@ child_info_ptr volatile children_pids=NULL;
 /** @brief count of arguments (how much children we should have) */
 int children_count=0;
 
-/** global argc */
+/** @brief global argc */
 int glargc;
-/** global argv */
+/** @brief global argv */
 char** glargv;
 
 /** @brief Function checks if pid is child of overlord.
@@ -70,8 +70,7 @@ volatile int is_child(pid_t checked_pid){
 	return -1;
 }
 
-/** @brief Function checks count of flag_sleep statuses in status field of children pids array - which tells us about 
- * number of sleeping children.
+/** @brief Function checks count of flag_sleep statuses in status field of children pids array - which tells us about number of sleeping children.
  * @return count of sleeping children; on error return -1.  */
 volatile int child_sleep_count(){
 	int tmp = 0;
@@ -212,6 +211,12 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 	}
 }
 
+/** @brief Fn handles real-time signals from children signalising end of work.
+*
+* @param sig signal we have received
+* @param si siginfo_t element containing info about signal
+* @param data unused, but required by sigaction() handler setting function
+*/
 void handle_rt(int sig, siginfo_t* si, void* data){
 	int temp=is_child(si->si_pid);
 	(children_pids+temp)->status=flag_sleep;
@@ -286,14 +291,13 @@ int main(int argc, char** argv){
 }
 
 
-/** @brief Fn is driver for creating and overwatching working process.
+/** @brief Fn is driver for creating (calling create_subdaemons) and overwatching working process.
 *
-* Function takes table of char* to arguments wchich are formats for usage in regex.
 * @param argc number of args; always at least 1 (for index 0 - program name).
 * @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
 */
 int overlord(int argc, char**argv){
-	/** children_count = argc - optind; */
+	/** we have chlidren_count children; and children_count = argc - optind; */
 	
 	/** create our subdaemons */
 	create_subdaemons(argc, argv);
@@ -442,6 +446,12 @@ int overlord(int argc, char**argv){
 	return 0;
 }
 
+/** @brief Fn is driver for creating children processes.
+*
+* Function creates children (by fork()) and sets their pid and alive status in childrens_pid array.
+* @param argc number of args; always at least 1 (for index 0 - program name).
+* @param argv table of char tables (table of arguments) AKA char** argv or char* argv[].
+*/
 int create_subdaemons(int argc, char** argv){
 	/** From getopt, we use optind to finde first pattern argument. For each pattern create process. */
 	for(int i=0;i<children_count;i++){
