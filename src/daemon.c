@@ -49,6 +49,12 @@ child_info_ptr volatile children_pids=NULL;
 /** @brief count of arguments (how much children we should have) */
 int children_count=0;
 
+/** @brief variable to indicate SIGUSR1 rather than auto timed start */
+volatile int gotsigusr1 = 0;
+
+/** @brief variable to indicate that program got at least one SIGRTMIN from children. */
+volatile int got_at_least_one_sigrtmin = 0;
+
 /** @brief global argc */
 int glargc;
 /** @brief global argv */
@@ -142,6 +148,8 @@ void check_and_resurrect_children(){
 			if(verbose>2)
 				syslog(LOG_DEBUG, "overlord: CHILD DEAD \n");
 			waitpid((children_pids+i)->pid, &status, WNOHANG);
+			if(verbose)
+				syslog(LOG_DEBUG, "overlord: GOT SIGCHLD \n");
 			pid_t newpid=fork();
 			if(newpid==-1)
 				continue;
@@ -185,6 +193,7 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 	switch (sig) {
 		case SIGUSR1:
 			critical_lock();
+			gotsigusr1=1;
 			flag = flag_start;
 		break;
 		case SIGUSR2:
@@ -220,6 +229,7 @@ void handle_signals(int sig, siginfo_t* si, void* data) {
 void handle_rt(int sig, siginfo_t* si, void* data){
 	int temp=is_child(si->si_pid);
 	(children_pids+temp)->status=flag_sleep;
+	got_at_least_one_sigrtmin=1;
 	return;
 }
 
@@ -349,13 +359,17 @@ int overlord(int argc, char**argv){
 
 
 		/** let's start our first scan! */
-		raise(SIGUSR1);
+		critical_lock();
+		flag = flag_start;
 
 		while (1) {
 			switch (flag) {
 				case flag_start: /** case flag==flag_start: send SIGUSR1 to child to start search */
-					if (verbose)
-						syslog(LOG_INFO, "overlord: GOT SIGUSR1\n");
+					if(gotsigusr1==1){
+						gotsigusr1=0;
+						if (verbose)
+							syslog(LOG_INFO, "overlord: GOT SIGUSR1\n");
+					}
 					/** send start signal to children. */
 					signal_children(SIGUSR1);
 					/** set overlord flag to switch state to flag_scan. */
@@ -379,6 +393,10 @@ int overlord(int argc, char**argv){
 				break;
 
 				case flag_scan: /** case flag==flag_scan */
+					if (verbose && got_at_least_one_sigrtmin){
+						syslog(LOG_INFO, "overlord: GOT AT LEAST ONE SIGRTMIN from children\n");
+						got_at_least_one_sigrtmin = 0;
+					}
 					if (verbose)
 						syslog(LOG_INFO, "overlord: woke up\n");
 					/** unlock signals */
@@ -429,8 +447,11 @@ int overlord(int argc, char**argv){
 					/**send SIGTERM to children*/
 					signal_children(SIGTERM);
 					/** collect zombie childrens */
+					if(verbose)
+						syslog(LOG_INFO, "overlord: GOT SIGTERM\n");
 					for(int i=optind;i<glargc;i++){
 						wait(NULL);
+
 					}
 					/** deallocate children_pids */
 					free((void*) children_pids);
