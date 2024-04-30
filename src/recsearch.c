@@ -36,7 +36,7 @@ void search_rec(char* word_to_find, char *root_path) {
 		        if (entry->d_type == DT_DIR) {
 				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) /** check for . and .. dirs; ignore them - continue. */
 					continue;
-				if(verbose)/** if verbose, print info about comparation */
+				if(verbose>1)/** if verbose, print info about comparation */
 					syslog(LOG_INFO ,"dir compare: dir_name %s searched_pattern %s in %s \n", entry->d_name, word_to_find, root_path);
 				if (strstr(entry->d_name, word_to_find) != NULL) {/** if wor_to_find is in our dir name, log it. */
 					time_t t = time(NULL);
@@ -45,7 +45,7 @@ void search_rec(char* word_to_find, char *root_path) {
 				}
 				search_rec(word_to_find, path);
 			} else if (entry->d_type == DT_REG) {
-				if(verbose){/** if verbose, print info about comparation */
+				if(verbose>1){/** if verbose, print info about comparation */
 					syslog(LOG_INFO ,"file compare: file_name %s searched_pattern %s in %s \n", entry->d_name, word_to_find, root_path);
 				}
 				if (strstr(entry->d_name, word_to_find) != NULL) {/** if wor_to_find is in our file name, log it. */
@@ -85,7 +85,7 @@ void search_rec_root(char* word_to_find, char *root_path) {
 		        if (entry->d_type == DT_DIR) {
 				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
 					continue;
-				if(verbose)
+				if(verbose>1)
 					syslog(LOG_INFO ,"dir compare: dir_name %s searched_pattern %s in %s \n", entry->d_name, word_to_find, root_path);
 				if (strstr(entry->d_name, word_to_find) != NULL) {
 					time_t t = time(NULL);
@@ -94,7 +94,7 @@ void search_rec_root(char* word_to_find, char *root_path) {
 				}
 				search_rec(word_to_find, path);
 			} else if (entry->d_type == DT_REG) {
-				if(verbose){
+				if(verbose>1){
 					syslog(LOG_INFO ,"file compare: file_name %s searched_pattern %s in %s \n", entry->d_name, word_to_find, root_path);
 				}
 				if (strstr(entry->d_name, word_to_find) != NULL) {
