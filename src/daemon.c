@@ -145,7 +145,7 @@ void check_and_resurrect_children(){
 	while (i<children_count){
 		if((children_pids+i)->alive==child_dead){
 			int status=0;
-			if(verbose>2)
+			if(verbose)
 				syslog(LOG_DEBUG, "overlord: CHILD DEAD \n");
 			waitpid((children_pids+i)->pid, &status, WNOHANG);
 			if(verbose)
@@ -158,7 +158,7 @@ void check_and_resurrect_children(){
 			}
 			(children_pids+i)->alive=child_alive;
 			(children_pids+i)->pid=newpid;
-			if(verbose>2)
+			if(verbose)
 				syslog(LOG_DEBUG, "overlord: ressurected %d with status %d \n",(children_pids+i)->pid, (children_pids+i)->status);
 			
 			if ((children_pids+i)->status==flag_scan){
@@ -420,6 +420,7 @@ int overlord(int argc, char**argv){
 							syslog(LOG_INFO, "overlord: went to sleep\n");
 						pause();
 					}
+						got_at_least_one_sigrtmin = 0;
 				break;
 
 				case flag_sleep:/** case flag_sleep */
