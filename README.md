@@ -1,103 +1,25 @@
 # Dokumentacja
-## Ogólnie - funkcje
-Aby ułatwić dokumentowanie oprogramowania, należy przyjąć styl komentarzy zgodny z doxygen, tj. dla komentarzy blokowych:
-```c
-/** @brief Krótki komentarz
-*
-* Długi komentarz - omówienie funkcji
-* druga linia
-* i trzecia
-*  @param a tutaj krótki komentarz o wymaganiach a, czym ewentualnie jest etc
-*  @param width tutaj czym jest width etc
-*  @param count tutaj czym jest width etc
-*  @return Tutaj opisujemy jaki będzie output
-*/
-int example(void* a, size_t width, size_t count){
-    //kod...
-}
-```
-na przykład:
-```c
-/** @brief Prints character ch with the specified color
- *         at position (row, col).
- *
- *  If any argument is invalid, the function has no effect.
- *
- *  @param row The row in which to display the character.
- *  @param col The column in which to display the character.
- *  @param ch The character to display.
- *  @param color The color to use to display the character.
- *  @return Void.
- */
-void draw_char(int row, int col, int ch, int color);
-```
-## Komentarze plikowe
-W przypadku komentarzy dot. plików:
-```c
-/** @file plik.c
- *  @brief A console driver.
- *
- *  These empty function definitions are provided
- *  so that stdio will build without complaining.
- *  You will need to fill these functions in. This
- *  is the implementation of the console driver.
- *  Important details about its implementation
- *  should go in these comments.
- *
- *  @author Fred Hacker (fhacker)
- */
+## PL
+### Koncept i funkcjonalności
+Program otrzymuje listę argumentów, z których każde jest fragmentem nazwy pliku. Program staje się demonem. Uruchamia dzieci (o których można przeczytać poniżej) i przeradza się w proces nadzorczy (śpi w oczekiwaniu na sygnały lub na zakończenie któregoś z procesów przeszukujących). Wysłanie procesowi nadzorczemu sygnału SIGUSR1 albo SIGUSR2 powoduje jego przekazania wszystkim procesom potomnym.
 
-/* -- Includes -- */
 
-/* libc includes. */
-#include <stdio.h>        /* for lprintf_kern() */
+Co kilkadziesiąt sekund (domyślny czas można zmienić za pomocą opcjonalnego parametru wiersza poleceń `-t czas`), rekurencyjnie skanuje system plików (`/`) poszukując plików lub katalogów w których występuje zadany fragment nazwy. Pliki, do których demon nie ma praw dostępu są pomijane. Również takie katalogi są pomijane, dodatkowo katalog bez prawa odczytu i wykonania nie jest brany pod uwagę na etapie przeszukania rekurencyjnego. Nazwy odnalezionych plików lub katalogów są przekazywane zapisywane do logu systemowego (syslog). Umieszczone są w nim następujące informacje: pełna data, pełna ścieżka pliku, poszukiwany wzorzec. Przeszukanie jest prowadzone współbieżnie przez liczbę procesów równą liczbie argumentów.
+Odebranie sygnału SIGUSR1 powoduje rozpoczęcie skanowania, jeśli proces śpi. Odebranie SIGUSR1, w chwili gdy trwa przeszukanie powoduje natychmiastowy restart przeszukiwania. Odebranie SIGUSR2, w chwili gdy trwa przeszukanie powoduje natychmiastowe zakończenie przeszukiwania i ponowne uśpienie demona.
 
-/* multiboot header file */
-#include <multiboot.h>    /* for boot_info */
+Dodatkowa opcja -v powoduje przesyłanie do logu wyczerpującej informacji o każdej z następujących czynności demona: a) uśpienie, b) obudzenie się c) odbiór sygnału d) porównanie nazwy pliku ze ścieżką.
 
-/*
- * state for kernel memory allocation.
- */
-extern lmm_t malloc_lmm;
-```
-więcej na (aka ukradzione między innymi z :3) [link](https://www.cs.cmu.edu/~410/doc/doxygen.html)
-# ANSI C - wskaźniki
-## Definiowanie
-jeśli definiujemy wskaźnik, to w tej samej linii co definicja jeśli coś do niego przypisujemy, to adres, np:
-```c
-int *a = malloc(sizeof(int));
-```
-jest równoważne
-```c
-int *a;
-a = malloc(sizeof(int));
-```
-## Arytmetyka wskaźników
-Przypuśćmy, że mamy tablicę A intów, przy czym została już zalokowana, wypełniona tak że index 0 ma 0, index 1 ma 1 etc. Niech będzie 100 elementów. Wtedy
-```c
-int *ptr = A;
-printf("%d\n", *ptr);
-ptr++; //ptr=1;
-printf("%d\n", *ptr);
-ptr+=2; //ptr=3
-printf("%d\n", *ptr);
-```
-wypisze nam kolejno w nowych liniach 0, 1 i 3. Należy uważać, by nie wyskoczyć poza index 99 (błąd typu buffer overflow, undefined!)
-## Odwoływanie do elementów wskaźników
-Jeśli mamy element w structie, do którego mamy wskaźnik, to do elementu struktury możemy odowływać się z pomocą albo (*a).val, albo a->val.
-```c
-typedef struct el{
-    int val;
-    struct el* next;
-} el, *elPtr;
+### Dodatkowe (własne) ulepszenia
+Proces będzie wskrzeszał dzieci zabite sygnałem SIGKILL. Zastosowano dodatkowo kilka stopni logowania (-verbose) - dokładniej od 0 do 3.
 
-int main(){
-    el* ll = malloc(sizeof(el));
-    ll->val = 5;
-    ll->next = malloc(sizeof(el));
-    ll->next->next=0;
-    return 0;
-}
-```
-# Użyte funkcje biblioteki linuxa
-Do rozwinięcia...
+## Documentation
+### Concept and functionalities
+The program receives a list of arguments, each of which is a fragment of a file name. The program becomes a daemon. It launches children (which you can read about below) and transforms into a supervisory process (sleeps waiting for signals or the end of one of the searching processes). Sending the supervisory process a SIGUSR1 or SIGUSR2 signal causes it to pass them to all child processes.
+
+Every few dozen seconds (the default time can be changed using the optional command-line parameter `-t time`), it recursively scans the file system (`/`) looking for files or directories in which the specified name fragment appears. Files to which the daemon does not have access rights are skipped. Also, such directories are skipped, additionally, a directory without read and execute rights is not taken into account at the stage of recursive searching. The names of the found files or directories are written to the system log (syslog). The following information is included in it: full date, full file path, searched pattern. The search is conducted concurrently by a number of processes equal to the number of arguments.
+Receiving a SIGUSR1 signal starts scanning if the process is asleep. Receiving a SIGUSR1 while searching is in progress causes an immediate restart of the search. Receiving a SIGUSR2 while searching is in progress causes an immediate end to the search and puts the daemon back to sleep.
+
+An additional -v option causes exhaustive information about each of the following daemon activities to be sent to the log: a) falling asleep, b) waking up c) receiving a signal d) comparing the file name with the path.
+
+### Additional (own) enhancements
+The process will resurrect children killed by the SIGKILL signal. Additionally, several logging levels (-verbose) have been implemented - specifically from 0 to 3.
