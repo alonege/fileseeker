@@ -31,8 +31,7 @@ void search_rec(char* word_to_find, char *root_path) {
 
 		while ((entry = readdir(dir)) != NULL && flag==flag_scan) {/** as long as we have dir to analyse we're in state of scanning */
 		        //char path[1024];
-		        snprintf(path, MAX_PATH_LEN, "%s/%s", root_path, entry->d_name);/** contencate strings */
-
+		        snprintf(path, MAX_PATH_LEN, "%s/%s", root_path, entry->d_name);/** concatenate strings */
 		        if (entry->d_type == DT_DIR) {
 				if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) /** check for . and .. dirs; ignore them - continue. */
 					continue;
