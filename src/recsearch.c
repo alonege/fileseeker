@@ -37,7 +37,7 @@ void search_rec(char* word_to_find, char *root_path) {
 					continue;
 				if(verbose>1)/** if verbose, print info about comparation */
 					syslog(LOG_INFO ,"dir compare: dir_name %s searched_pattern %s in %s \n", entry->d_name, word_to_find, root_path);
-				if (strstr(entry->d_name, word_to_find) != NULL) {/** if wor_to_find is in our dir name, log it. */
+				if (strstr(entry->d_name, word_to_find) != NULL) {/** if word_to_find is in our dir name, log it. */
 					time_t t = time(NULL);
 					struct tm tm = *localtime(&t);
 					syslog(LOG_INFO ,"found directory: date: %d-%02d-%02d %02d:%02d:%02d full_path: %s pattern: %s\n",tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, path, word_to_find);
